@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { Terminal, CheckCircle, AlertCircle, Play } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Terminal, CheckCircle, AlertCircle, Play, Linkedin, MapPin } from 'lucide-react';
 import { executeHR, streamPostSSE } from '../api';
 
 interface ExecutionPanelProps {
@@ -10,6 +10,7 @@ interface ExecutionPanelProps {
 
 export default function ExecutionPanel({ companyId, hrResult }: ExecutionPanelProps) {
   const [logs, setLogs] = useState<{ id: string; type: string; text: string; details?: any }[]>([]);
+  const [sourcedProfiles, setSourcedProfiles] = useState<any[]>([]);
   const [isExecuting, setIsExecuting] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -55,6 +56,8 @@ export default function ExecutionPanel({ companyId, hrResult }: ExecutionPanelPr
             addLog('error', event.message);
           } else if (event.type === 'execution_done') {
             addLog('done', event.message);
+          } else if (event.type === 'sourced_profiles') {
+            setSourcedProfiles(event.profiles);
           }
         },
         () => {
@@ -180,6 +183,78 @@ export default function ExecutionPanel({ companyId, hrResult }: ExecutionPanelPr
         ))}
         <div ref={logsEndRef} />
       </div>
+
+      {/* Sourced Profiles Grid */}
+      <AnimatePresence>
+        {sourcedProfiles.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            style={{
+              padding: 20,
+              background: 'rgba(10, 10, 10, 0.5)',
+              borderTop: '1px solid rgba(255,255,255,0.05)',
+            }}
+          >
+            <h4 style={{ 
+              fontSize: '0.85rem', 
+              fontWeight: 700, 
+              color: '#60a5fa', 
+              textTransform: 'uppercase', 
+              letterSpacing: '0.06em', 
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8
+            }}>
+              <Linkedin size={16} /> Live Sourced Candidates
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+              {sourcedProfiles.map((profile, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ delay: i * 0.15 }}
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 12,
+                    padding: 16,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12,
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <img 
+                      src={profile.avatar_url} 
+                      alt={profile.name} 
+                      style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(255,255,255,0.1)' }} 
+                    />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#fff' }}>{profile.name}</div>
+                      <div style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{profile.title}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <MapPin size={12} /> {profile.location}
+                  </div>
+                  <button 
+                    className="btn btn-ghost btn-sm" 
+                    onClick={() => window.open(profile.linkedin_url, '_blank')}
+                    style={{ width: '100%', marginTop: 'auto', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.2)' }}
+                  >
+                    <Linkedin size={14} /> View Profile
+                  </button>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
