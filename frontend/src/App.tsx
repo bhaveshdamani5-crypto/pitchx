@@ -31,7 +31,29 @@ const initialState: AppState = {
   memorySaves: [],
   memoryCount: 0,
   isReturning: false,
+  trustOps: {
+    evidenceRanked: 0,
+    verifiedClaims: 0,
+    assumptions: 0,
+    downgradedClaims: 0,
+    guardChecksPassed: 0,
+    guardChecksFailed: 0,
+    hrPiiRedactions: 0,
+    actionsAwaitingApproval: 0,
+    actionsBlocked: 0,
+    latestEvents: [],
+  },
 };
+
+function pushTrustEvent(
+  trustOps: AppState['trustOps'],
+  event: AppState['trustOps']['latestEvents'][number],
+) {
+  return {
+    ...trustOps,
+    latestEvents: [event, ...trustOps.latestEvents].slice(0, 6),
+  };
+}
 
 function App() {
   const [state, setState] = useState<AppState>(initialState);
@@ -81,6 +103,26 @@ function App() {
       killProbability: undefined,
       boardResolution: undefined,
       error: undefined,
+      trustOps: {
+        evidenceRanked: params.companyBrief?.trustops?.ranked_count || params.companyBrief?.evidence_pack?.length || 0,
+        provider: params.companyBrief?.trustops?.provider,
+        model: params.companyBrief?.trustops?.model,
+        verifiedClaims: 0,
+        assumptions: 0,
+        downgradedClaims: 0,
+        guardChecksPassed: 0,
+        guardChecksFailed: 0,
+        hrPiiRedactions: 0,
+        actionsAwaitingApproval: 0,
+        actionsBlocked: 0,
+        latestEvents: params.companyBrief?.trustops
+          ? [{
+              type: 'evidence_ranked',
+              label: `${params.companyBrief.trustops.provider} ranked ${params.companyBrief.trustops.ranked_count} evidence passages`,
+              status: 'info',
+            }]
+          : [],
+      },
     });
   }, [updateState]);
 
@@ -155,7 +197,58 @@ function App() {
               claims: [...existing, newClaim],
             };
           }
-          return { ...prev, agentMessages: messages };
+          const trustOps = pushTrustEvent(
+            {
+              ...prev.trustOps,
+              verifiedClaims: prev.trustOps.verifiedClaims + (event.verified ? 1 : 0),
+              assumptions: prev.trustOps.assumptions + (event.verified ? 0 : 1),
+              downgradedClaims: prev.trustOps.downgradedClaims + (event.downgraded ? 1 : 0),
+            },
+            {
+              type: 'claim',
+              label: event.verified
+                ? `${event.agent} claim verified by ${event.source_key?.replace(/_/g, ' ')}`
+                : `${event.agent} claim marked as assumption`,
+              status: event.verified ? 'safe' : 'warning',
+            },
+          );
+          return { ...prev, agentMessages: messages, trustOps };
+        }
+
+        case 'guard_check': {
+          const trustOps = pushTrustEvent(
+            {
+              ...prev.trustOps,
+              provider: event.provider || prev.trustOps.provider,
+              model: event.model || prev.trustOps.model,
+              guardChecksPassed: prev.trustOps.guardChecksPassed + (event.safe ? 1 : 0),
+              guardChecksFailed: prev.trustOps.guardChecksFailed + (event.safe ? 0 : 1),
+            },
+            {
+              type: 'guard_check',
+              label: `${event.agent} guard ${event.safe ? 'passed' : 'blocked'}`,
+              status: event.safe ? 'safe' : 'blocked',
+            },
+          );
+          return { ...prev, trustOps };
+        }
+
+        case 'action_guard': {
+          const trustOps = pushTrustEvent(
+            {
+              ...prev.trustOps,
+              provider: event.provider || prev.trustOps.provider,
+              model: event.model || prev.trustOps.model,
+              actionsAwaitingApproval: prev.trustOps.actionsAwaitingApproval + (event.safe ? 1 : 0),
+              actionsBlocked: prev.trustOps.actionsBlocked + (event.safe ? 0 : 1),
+            },
+            {
+              type: 'action_guard',
+              label: `${event.function} ${event.safe ? 'safe, awaiting approval' : 'blocked'}`,
+              status: event.safe ? 'safe' : 'blocked',
+            },
+          );
+          return { ...prev, trustOps };
         }
 
         case 'agent_done': {

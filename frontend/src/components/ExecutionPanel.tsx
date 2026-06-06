@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Terminal, Send, Briefcase, CheckCircle, AlertCircle, Play } from 'lucide-react';
+import { Terminal, CheckCircle, AlertCircle, Play } from 'lucide-react';
 import { executeHR, streamPostSSE } from '../api';
 
 interface ExecutionPanelProps {
@@ -44,6 +44,11 @@ export default function ExecutionPanel({ companyId, hrResult }: ExecutionPanelPr
             addLog('info', event.message);
           } else if (event.type === 'tool_call') {
             addLog('tool', `Calling tool \`${event.function}\``, event.arguments);
+          } else if (event.type === 'action_guard') {
+            addLog(
+              event.safe ? 'success' : 'error',
+              `${event.provider || 'NVIDIA TrustOps'} ${event.safe ? 'approved' : 'blocked'} \`${event.function}\` — ${event.status?.replace(/_/g, ' ')}`,
+            );
           } else if (event.type === 'tool_result') {
             addLog('success', event.message);
           } else if (event.type === 'error') {

@@ -29,6 +29,33 @@ const RESEARCH_LABELS: Record<string, string> = {
   founder_background: 'Founder Background',
 };
 
+const DEMO_PRESETS = [
+  {
+    name: 'BrowserWire',
+    website: 'https://browserwire.com',
+    industry: 'Browser automation infrastructure',
+    stage: 'seed',
+    challenge: 'Can we become the trusted browser execution layer for autonomous agents without getting boxed in by incumbents?',
+    teamSize: '8',
+  },
+  {
+    name: 'Authsome',
+    website: 'https://authsome.com',
+    industry: 'Agent trust infrastructure',
+    stage: 'seed',
+    challenge: 'How do we turn least-privilege agent delegation into an urgent developer platform category?',
+    teamSize: '6',
+  },
+  {
+    name: 'Obscure Robotics Co',
+    website: '',
+    industry: 'Robotics',
+    stage: 'pre-seed',
+    challenge: 'There is limited public data; force the board to separate verified evidence from assumptions.',
+    teamSize: '3',
+  },
+];
+
 export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: CompanyInputProps) {
   const [companyName, setCompanyName] = useState('');
   const [website, setWebsite] = useState('');
@@ -40,6 +67,7 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
   const [isResearching, setIsResearching] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [researchQueries, setResearchQueries] = useState<ResearchQuery[]>([]);
+  const [evidenceStatus, setEvidenceStatus] = useState('');
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,6 +76,7 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
 
     setIsResearching(true);
     setError('');
+    setEvidenceStatus('');
 
     // Init research queries as pending
     const queryKeys = Object.keys(RESEARCH_LABELS);
@@ -109,7 +138,11 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
               summary: event.summary,
             };
           } else if (event.type === 'research_limited') {
-            // Graceful degradation — no error, proceed with limited data
+            setEvidenceStatus('Limited public data — proceeding in assumption-only mode.');
+          } else if (event.type === 'evidence_ranked') {
+            setEvidenceStatus(
+              `${event.provider || 'NVIDIA TrustOps'} ranked ${event.ranked_count || 0} evidence passages.`,
+            );
           }
         },
       );
@@ -166,6 +199,27 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
         </p>
       </div>
 
+      <div className="preset-row">
+        {DEMO_PRESETS.map((preset) => (
+          <button
+            key={preset.name}
+            type="button"
+            className="preset-chip"
+            disabled={isResearching || isStarting}
+            onClick={() => {
+              setCompanyName(preset.name);
+              setWebsite(preset.website);
+              setIndustry(preset.industry);
+              setStage(preset.stage);
+              setChallenge(preset.challenge);
+              setTeamSize(preset.teamSize);
+            }}
+          >
+            {preset.name}
+          </button>
+        ))}
+      </div>
+
       {/* Research Progress Panel */}
       {(isResearching || isStarting) && researchQueries.length > 0 && (
         <motion.div
@@ -211,6 +265,12 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
               </div>
             </div>
           ))}
+          {evidenceStatus && (
+            <div className="trustops-event safe" style={{ marginTop: 12 }}>
+              <span />
+              {evidenceStatus}
+            </div>
+          )}
         </motion.div>
       )}
 

@@ -23,6 +23,14 @@ export default function HRPanel({ companyId, sessionId, businessPlan, onBack }: 
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [evaluations, setEvaluations] = useState<CandidateEvaluation[]>([]);
   const [hrResult, setHrResult] = useState<HRResult | null>(null);
+  const [guardEvents, setGuardEvents] = useState<Array<{
+    name: string;
+    safe: boolean;
+    pii_detected: boolean;
+    emails_redacted: number;
+    phones_redacted: number;
+    provider?: string;
+  }>>([]);
   const [error, setError] = useState('');
 
   const addCandidate = () => {
@@ -54,6 +62,7 @@ export default function HRPanel({ companyId, sessionId, businessPlan, onBack }: 
     setError('');
     setEvaluations([]);
     setHrResult(null);
+    setGuardEvents([]);
 
     try {
       const res = await startHR({
@@ -76,6 +85,18 @@ export default function HRPanel({ companyId, sessionId, businessPlan, onBack }: 
         (event) => {
           if (event.type === 'candidate_done') {
             setEvaluations((prev) => [...prev, event.evaluation]);
+          } else if (event.type === 'hr_guard') {
+            setGuardEvents((prev) => [
+              ...prev,
+              {
+                name: event.name,
+                safe: event.safe,
+                pii_detected: event.pii_detected,
+                emails_redacted: event.emails_redacted || 0,
+                phones_redacted: event.phones_redacted || 0,
+                provider: event.provider,
+              },
+            ]);
           } else if (event.type === 'hr_done') {
             setHrResult({
               ranked_list: event.ranked_list,
@@ -332,6 +353,32 @@ export default function HRPanel({ companyId, sessionId, businessPlan, onBack }: 
             </>
           )}
         </button>
+      )}
+
+      {guardEvents.length > 0 && (
+        <div className="glass-card" style={{ padding: 16, marginBottom: 20, borderColor: 'rgba(52, 211, 153, 0.25)' }}>
+          <h3
+            style={{
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: '#34d399',
+              marginBottom: 10,
+            }}
+          >
+            NVIDIA HR Privacy Guard
+          </h3>
+          {guardEvents.map((event, index) => (
+            <div key={`${event.name}-${index}`} className="trustops-event safe" style={{ marginBottom: 6 }}>
+              <span />
+              {event.name}: {event.safe ? 'safe' : 'blocked'}
+              {event.pii_detected
+                ? `, redacted ${event.emails_redacted} email(s) and ${event.phones_redacted} phone(s)`
+                : ', no PII found'}
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Results */}

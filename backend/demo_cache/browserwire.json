@@ -1,0 +1,86 @@
+{
+  "company_name": "BrowserWire",
+  "website": "https://browserwire.com",
+  "ingestion_timestamp": "cached-demo",
+  "product_description": "BrowserWire is positioned as browser automation infrastructure for human-like web sessions and agent workflows.",
+  "funding_status": {
+    "total_raised": "Unknown",
+    "last_round": "Unknown",
+    "investors": [],
+    "valuation": "Unknown"
+  },
+  "market_position": {
+    "market_size": "Browser automation and agent infrastructure is expanding as teams move from demos to production web workflows.",
+    "growth_rate": "Unknown",
+    "market_share_estimate": "Unknown"
+  },
+  "competitive_landscape": [
+    {
+      "name": "Browserbase",
+      "strength": "Developer-friendly hosted browser infrastructure",
+      "weakness": "Crowded infrastructure market",
+      "funding": "Unknown"
+    },
+    {
+      "name": "Playwright services",
+      "strength": "Mature automation ecosystem",
+      "weakness": "Requires teams to operate reliability and anti-bot layers themselves",
+      "funding": "N/A"
+    }
+  ],
+  "reputation_data": {
+    "glassdoor_rating": null,
+    "glassdoor_review_summary": "Insufficient public employee review data in cached demo mode.",
+    "customer_rating": null,
+    "customer_sentiment_summary": "Cached demo brief focuses on market and technical risk rather than customer ratings.",
+    "top_complaints": [
+      "Browser automation agents can fail on authentication, bot detection, and unpredictable page states."
+    ],
+    "top_praises": [
+      "Production browser sessions are a concrete last-mile need for autonomous agents."
+    ]
+  },
+  "recent_news_summary": "Cached demo profile based on hackathon judge context.",
+  "red_flags_detected": [
+    "Reliability, compliance, and anti-bot constraints are hard production edges for browser agents."
+  ],
+  "research_sources": [
+    "https://browserwire.com",
+    "theme.md"
+  ],
+  "evidence_pack": [
+    {
+      "id": "company_overview_1",
+      "source_key": "company_overview",
+      "title": "BrowserWire company context",
+      "url": "https://browserwire.com",
+      "content": "BrowserWire is described in the hackathon context as browser automation infrastructure for human-like, anti-bot-evasion web sessions.",
+      "score": 0.91,
+      "provider": "Cached NVIDIA TrustOps"
+    },
+    {
+      "id": "market_landscape_1",
+      "source_key": "market_landscape",
+      "title": "Agent browser infrastructure market",
+      "url": "theme.md",
+      "content": "The hackathon theme emphasizes agents that operate in real environments and handle authentication, ambiguous context, and edge cases.",
+      "score": 0.88,
+      "provider": "Cached NVIDIA TrustOps"
+    },
+    {
+      "id": "competitors_1",
+      "source_key": "competitors",
+      "title": "Browser automation alternatives",
+      "url": "https://playwright.dev",
+      "content": "Playwright and hosted browser infrastructure providers represent adjacent alternatives for browser automation workflows.",
+      "score": 0.72,
+      "provider": "Cached NVIDIA TrustOps"
+    }
+  ],
+  "trustops": {
+    "provider": "Cached NVIDIA NeMo Retriever",
+    "model": "nvidia/llama-3.2-nv-rerankqa-1b-v2",
+    "ranked_count": 3,
+    "generated_at": "cached-demo"
+  }
+}

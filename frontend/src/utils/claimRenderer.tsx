@@ -49,11 +49,14 @@ export function ProvenanceBadges({ claims }: { claims: ClaimTag[] }) {
         <span
           key={i}
           className={`provenance-badge ${claim.verified ? 'verified' : 'assumption'}`}
-          title={claim.text}
+          title={claim.evidence_id ? `${claim.text}\nEvidence: ${claim.evidence_id}` : claim.text}
         >
           {claim.verified ? '✓ Verified' : '⚠ Assumption'}
           {claim.source_key && (
             <span className="provenance-source"> · {claim.source_key.replace(/_/g, ' ')}</span>
+          )}
+          {claim.evidence_score !== undefined && (
+            <span className="provenance-source"> · {Math.round(claim.evidence_score * 100)}%</span>
           )}
         </span>
       ))}

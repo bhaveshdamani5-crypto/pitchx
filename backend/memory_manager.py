@@ -74,6 +74,16 @@ CREATE TABLE IF NOT EXISTS hr_decisions (
     evaluation_json JSON,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS trustops_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id TEXT REFERENCES companies(id),
+    session_id TEXT,
+    event_type TEXT NOT NULL,
+    agent_name TEXT,
+    payload_json JSON,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -377,5 +387,38 @@ class MemoryManager:
                 """SELECT * FROM hr_decisions WHERE company_id = ?
                    ORDER BY created_at DESC""",
                 (company_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    # ─── TrustOps / Data Flywheel Operations ────────────────────────
+
+    def save_trustops_event(
+        self,
+        company_id: str,
+        event_type: str,
+        payload: dict,
+        session_id: str = "",
+        agent_name: str = "",
+    ):
+        with self._get_conn() as conn:
+            conn.execute(
+                """INSERT INTO trustops_events
+                   (company_id, session_id, event_type, agent_name, payload_json)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    company_id,
+                    session_id,
+                    event_type,
+                    agent_name,
+                    json.dumps(payload),
+                ),
+            )
+
+    def get_trustops_events(self, company_id: str, limit: int = 50) -> List[dict]:
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """SELECT * FROM trustops_events WHERE company_id = ?
+                   ORDER BY created_at DESC LIMIT ?""",
+                (company_id, limit),
             ).fetchall()
             return [dict(r) for r in rows]

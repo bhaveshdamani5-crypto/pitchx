@@ -36,6 +36,7 @@ export interface HRStartResponse {
 
 export type DebateEventType =
   | 'memory_loaded'
+  | 'evidence_ranked'
   | 'research_injected'
   | 'reality_gap_loaded'
   | 'round_start'
@@ -50,6 +51,9 @@ export type DebateEventType =
   | 'board_resolution'
   | 'memory_save'
   | 'memory_rejected'
+  | 'guard_check'
+  | 'hr_guard'
+  | 'action_guard'
   | 'done'
   | 'error'
   | 'stream_end';
@@ -64,6 +68,9 @@ export interface ClaimTag {
   source_key?: string;
   text: string;
   source_url?: string;
+  evidence_id?: string;
+  evidence_score?: number;
+  downgraded?: boolean;
 }
 
 export interface AgentMessage {
@@ -217,6 +224,22 @@ export interface CompanyBrief {
   };
   recent_news_summary?: string;
   red_flags_detected?: string[];
+  research_sources?: string[];
+  evidence_pack?: Array<{
+    id: string;
+    source_key: string;
+    title: string;
+    url?: string;
+    content: string;
+    score: number;
+    provider?: string;
+  }>;
+  trustops?: {
+    provider: string;
+    model: string;
+    ranked_count: number;
+    generated_at?: string;
+  };
 }
 
 // ─── App State ──────────────────────────────────
@@ -228,6 +251,25 @@ export interface MemoryEvent {
   key: string;
   rejected?: boolean;
   reason?: string;
+}
+
+export interface TrustOpsState {
+  provider?: string;
+  model?: string;
+  evidenceRanked: number;
+  verifiedClaims: number;
+  assumptions: number;
+  downgradedClaims: number;
+  guardChecksPassed: number;
+  guardChecksFailed: number;
+  hrPiiRedactions: number;
+  actionsAwaitingApproval: number;
+  actionsBlocked: number;
+  latestEvents: Array<{
+    type: string;
+    label: string;
+    status: 'safe' | 'warning' | 'blocked' | 'info';
+  }>;
 }
 
 export interface AppState {
@@ -251,5 +293,6 @@ export interface AppState {
   memorySaves: MemoryEvent[];
   memoryCount: number;
   isReturning: boolean;
+  trustOps: TrustOpsState;
   error?: string;
 }

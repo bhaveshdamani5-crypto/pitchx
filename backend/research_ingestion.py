@@ -10,6 +10,7 @@ import re
 from typing import Optional, AsyncGenerator
 
 from reality_gap import compute_reality_gap
+from nvidia_trustops import rank_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,8 @@ COMPANY_BRIEF_SCHEMA = {
     "recent_news_summary": "",
     "red_flags_detected": [],
     "research_sources": [],
+    "evidence_pack": [],
+    "trustops": {},
 }
 
 
@@ -139,6 +142,14 @@ async def ingest_company(
             yield {"type": "research_start", "queries": len(RESEARCH_QUERIES), "cached": True}
             for key in RESEARCH_QUERIES:
                 yield {"type": "query_done", "key": key, "found": True, "cached": True}
+            evidence_pack = cached.get("evidence_pack", [])
+            yield {
+                "type": "evidence_ranked",
+                "provider": cached.get("trustops", {}).get("provider", "Cached NVIDIA TrustOps"),
+                "model": cached.get("trustops", {}).get("model", "cached"),
+                "ranked_count": len(evidence_pack),
+                "cached": True,
+            }
             yield {"type": "synthesis_start", "cached": True}
             yield {"type": "brief_ready", "brief": cached, "cached": True}
             if user_context:
@@ -150,8 +161,20 @@ async def ingest_company(
         yield {
             "type": "research_limited",
             "message": "Live research unavailable — proceeding with provided context only.",
+            "mode": "assumption_only",
         }
         brief = _build_fallback_brief(company_name, website_url or "", {})
+        brief["trustops"] = {
+            "provider": "No live evidence",
+            "model": "none",
+            "ranked_count": 0,
+        }
+        yield {
+            "type": "evidence_ranked",
+            "provider": "No live evidence",
+            "model": "none",
+            "ranked_count": 0,
+        }
         yield {"type": "brief_ready", "brief": brief, "limited": True}
         return
 
@@ -181,9 +204,25 @@ async def ingest_company(
             yield {"type": "query_done", "key": key, "found": False, "error": str(e)}
 
     # Synthesize into CompanyBrief using Claude
+    trustops = await rank_evidence(company_name, raw_data, nvidia_key)
+    raw_data["_trustops"] = trustops
+    yield {
+        "type": "evidence_ranked",
+        "provider": trustops.get("provider"),
+        "model": trustops.get("model"),
+        "ranked_count": trustops.get("ranked_count", 0),
+    }
+
     yield {"type": "synthesis_start"}
 
     brief = await synthesize_brief(company_name, website_url or "", raw_data, nvidia_key or "")
+    brief["evidence_pack"] = trustops.get("evidence_pack", [])
+    brief["trustops"] = {
+        "provider": trustops.get("provider"),
+        "model": trustops.get("model"),
+        "ranked_count": trustops.get("ranked_count", 0),
+        "generated_at": trustops.get("generated_at"),
+    }
 
     yield {"type": "brief_ready", "brief": brief}
 
@@ -260,7 +299,10 @@ Return ONLY valid JSON matching this schema (fill in what you can, use "Unknown"
   }},
   "recent_news_summary": "string",
   "red_flags_detected": ["string"],
-  "research_sources": ["url"]
+  "research_sources": ["url"],
+  "evidence_pack": [
+    {{"id": "string", "source_key": "string", "title": "string", "url": "string", "content": "string", "score": 0.0}}
+  ]
 }}
 
 Return ONLY the JSON. No markdown, no explanation."""
@@ -317,5 +359,16 @@ def _build_fallback_brief(
                 if r.get("url"):
                     sources.append(r["url"])
     brief["research_sources"] = sources[:10]
+    trustops = raw_data.get("_trustops") if isinstance(raw_data, dict) else None
+    if isinstance(trustops, dict):
+        brief["evidence_pack"] = trustops.get("evidence_pack", [])
+        brief["trustops"] = {
+            "provider": trustops.get("provider"),
+            "model": trustops.get("model"),
+            "ranked_count": trustops.get("ranked_count", 0),
+        }
+    else:
+        brief["evidence_pack"] = []
+        brief["trustops"] = {"provider": "No live evidence", "model": "none", "ranked_count": 0}
 
     return brief

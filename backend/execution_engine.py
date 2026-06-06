@@ -6,6 +6,7 @@ from typing import AsyncGenerator, Optional
 from openai import OpenAI
 
 from memory_manager import MemoryManager
+from nvidia_trustops import guard_text
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class ExecutionEngine:
         api_key = os.getenv("NVIDIA_API_KEY")
         if not api_key:
             raise ValueError("NVIDIA_API_KEY not set")
+        self.api_key = api_key
         
         self.client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1", 
@@ -148,6 +150,42 @@ Please execute the necessary actions now.
                         "function": function_name,
                         "arguments": args
                     }
+
+                    guard = await guard_text(
+                        json.dumps(args),
+                        self.api_key,
+                        policy="safe and professional HR outreach or job posting action",
+                    )
+                    yield {
+                        "type": "action_guard",
+                        "function": function_name,
+                        "safe": guard.get("safe", True),
+                        "provider": guard.get("provider"),
+                        "model": guard.get("model"),
+                        "categories": guard.get("categories", []),
+                        "pii_detected": guard.get("pii", {}).get("pii_detected", False),
+                        "status": "awaiting_human_approval" if guard.get("safe", True) else "blocked",
+                    }
+                    self.memory.save_trustops_event(
+                        company_id=company_id,
+                        event_type="action_guard",
+                        agent_name="Execution",
+                        payload={
+                            "function": function_name,
+                            "safe": guard.get("safe", True),
+                            "provider": guard.get("provider"),
+                            "categories": guard.get("categories", []),
+                        },
+                    )
+
+                    if not guard.get("safe", True):
+                        yield {
+                            "type": "tool_result",
+                            "function": function_name,
+                            "status": "blocked",
+                            "message": f"Blocked {function_name} by NVIDIA TrustOps guard"
+                        }
+                        continue
                     
                     # Simulate slight delay for execution realism
                     await asyncio.sleep(2.0)

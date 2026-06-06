@@ -1,0 +1,86 @@
+{
+  "company_name": "Authsome",
+  "website": "https://authsome.com",
+  "ingestion_timestamp": "cached-demo",
+  "product_description": "Authsome is described in the hackathon context as open-source trust infrastructure for autonomous agents.",
+  "funding_status": {
+    "total_raised": "Unknown",
+    "last_round": "Unknown",
+    "investors": [],
+    "valuation": "Unknown"
+  },
+  "market_position": {
+    "market_size": "Agent trust, authorization, and delegation infrastructure is a growing need as autonomous systems act on behalf of users.",
+    "growth_rate": "Unknown",
+    "market_share_estimate": "Unknown"
+  },
+  "competitive_landscape": [
+    {
+      "name": "Traditional IAM",
+      "strength": "Established enterprise buyer trust",
+      "weakness": "Not designed around autonomous delegated agent actions",
+      "funding": "N/A"
+    },
+    {
+      "name": "Agent runtime platforms",
+      "strength": "Close to agent execution paths",
+      "weakness": "Trust infrastructure can be bundled or fragmented",
+      "funding": "Unknown"
+    }
+  ],
+  "reputation_data": {
+    "glassdoor_rating": null,
+    "glassdoor_review_summary": "Insufficient public employee review data in cached demo mode.",
+    "customer_rating": null,
+    "customer_sentiment_summary": "Cached demo brief focuses on strategic category fit.",
+    "top_complaints": [
+      "Agent trust infrastructure requires clear developer ergonomics and strong proof of safety."
+    ],
+    "top_praises": [
+      "Least-privilege agent delegation is directly aligned with production-grade autonomous agents."
+    ]
+  },
+  "recent_news_summary": "Cached demo profile based on hackathon judge context.",
+  "red_flags_detected": [
+    "The category may require education unless the product shows immediate delegated-action use cases."
+  ],
+  "research_sources": [
+    "https://authsome.com",
+    "theme.md"
+  ],
+  "evidence_pack": [
+    {
+      "id": "company_overview_1",
+      "source_key": "company_overview",
+      "title": "Authsome company context",
+      "url": "theme.md",
+      "content": "The hackathon context describes Authsome as open-source trust infrastructure for autonomous agents.",
+      "score": 0.93,
+      "provider": "Cached NVIDIA TrustOps"
+    },
+    {
+      "id": "market_landscape_1",
+      "source_key": "market_landscape",
+      "title": "Agent trust infrastructure need",
+      "url": "theme.md",
+      "content": "The hackathon problem statement says production agents struggle to authenticate and act safely on behalf of real users.",
+      "score": 0.9,
+      "provider": "Cached NVIDIA TrustOps"
+    },
+    {
+      "id": "red_flags_1",
+      "source_key": "red_flags",
+      "title": "Category adoption risk",
+      "url": "theme.md",
+      "content": "Trust infrastructure has to prove least-privilege delegation and auditability for real-world agent workflows.",
+      "score": 0.78,
+      "provider": "Cached NVIDIA TrustOps"
+    }
+  ],
+  "trustops": {
+    "provider": "Cached NVIDIA NeMo Retriever",
+    "model": "nvidia/llama-3.2-nv-rerankqa-1b-v2",
+    "ranked_count": 3,
+    "generated_at": "cached-demo"
+  }
+}

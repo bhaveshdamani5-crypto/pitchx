@@ -16,6 +16,7 @@ from openai import OpenAI
 from agents import AGENT_CONFIG, build_agent_prompt_with_memory
 from memory_manager import MemoryManager
 from claim_parser import parse_claims, is_memory_key_allowed
+from nvidia_trustops import guard_text, redact_pii, validate_claim
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class DebateEngine:
         api_key = os.getenv("NVIDIA_API_KEY")
         if not api_key:
             raise ValueError("NVIDIA_API_KEY not set")
+        self.api_key = api_key
         self.client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1", 
             api_key=api_key,
@@ -106,6 +108,7 @@ class DebateEngine:
                 context="This is Round 1 — give your independent assessment. Do not reference other agents yet.",
                 company_brief=company_brief,
                 round_num=1,
+                session_id=session_id,
             ):
                 yield event
                 if event.get("type") == "agent_done":
@@ -138,6 +141,7 @@ class DebateEngine:
                 context=cross_exam_context,
                 company_brief=company_brief,
                 round_num=2,
+                session_id=session_id,
             ):
                 yield event
                 if event.get("type") == "agent_done":
@@ -173,6 +177,7 @@ class DebateEngine:
             context=devil_context,
             company_brief=company_brief,
             round_num=3,
+            session_id=session_id,
         ):
             yield event
             if event.get("type") == "agent_done":
@@ -232,8 +237,22 @@ class DebateEngine:
                         "key": key,
                         "reason": "out_of_scope",
                     }
+                    self.memory.save_trustops_event(
+                        company_id=company_id,
+                        session_id=session_id,
+                        agent_name=agent_name,
+                        event_type="memory_rejected",
+                        payload={"key": key, "reason": "out_of_scope"},
+                    )
                     continue
                 self.memory.save_agent_memory(company_id, agent_name, key, value)
+                self.memory.save_trustops_event(
+                    company_id=company_id,
+                    session_id=session_id,
+                    agent_name=agent_name,
+                    event_type="memory_saved",
+                    payload={"key": key},
+                )
                 yield {
                     "type": "memory_save",
                     "agent": agent_name,
@@ -256,6 +275,7 @@ class DebateEngine:
         context: str,
         company_brief: Optional[dict],
         round_num: int,
+        session_id: str,
     ) -> AsyncGenerator[dict, None]:
         """Run a single agent and yield streaming events."""
         config = AGENT_CONFIG.get(agent_name) or AGENT_CONFIG.get("Devil") or {}
@@ -328,9 +348,39 @@ Provide your analysis now. Be specific, cite data, use numbers where possible.""
         confidence = self._extract_confidence(full_response)
 
         sources = (company_brief or {}).get("research_sources", [])
-        claims = parse_claims(full_response, sources)
+        evidence_pack = (company_brief or {}).get("evidence_pack", [])
+        raw_claims = parse_claims(full_response, sources)
+        claims = [validate_claim(claim, evidence_pack) for claim in raw_claims]
         for claim in claims:
             yield {"type": "claim", "agent": agent_name, **claim}
+            self.memory.save_trustops_event(
+                company_id=company_id,
+                session_id=session_id,
+                agent_name=agent_name,
+                event_type="claim_checked",
+                payload=claim,
+            )
+
+        guard = await guard_text(
+            full_response,
+            self.api_key,
+            policy="startup boardroom analysis must be safe, relevant, and professional",
+        )
+        yield {
+            "type": "guard_check",
+            "agent": agent_name,
+            "safe": guard.get("safe", True),
+            "provider": guard.get("provider"),
+            "model": guard.get("model"),
+            "categories": guard.get("categories", []),
+        }
+        self.memory.save_trustops_event(
+            company_id=company_id,
+            session_id=session_id,
+            agent_name=agent_name,
+            event_type="guard_check",
+            payload={k: guard.get(k) for k in ("provider", "model", "safe", "categories")},
+        )
 
         yield {
             "type": "agent_done",
@@ -664,6 +714,7 @@ class HREngine:
         api_key = os.getenv("NVIDIA_API_KEY")
         if not api_key:
             raise ValueError("NVIDIA_API_KEY not set")
+        self.api_key = api_key
         self.client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1", 
             api_key=api_key,
@@ -714,9 +765,51 @@ class HREngine:
                 "name": cand_name,
             }
 
+            candidate_text = "\n".join([
+                str(candidate.get("resume_text", "")),
+                str(candidate.get("interview_transcript", "")),
+            ])
+            guard = await guard_text(
+                candidate_text,
+                self.api_key,
+                policy="candidate evaluation input privacy and safety",
+            )
+            pii = guard.get("pii", {})
+            yield {
+                "type": "hr_guard",
+                "candidate_id": cand_id,
+                "name": cand_name,
+                "safe": guard.get("safe", True),
+                "provider": guard.get("provider"),
+                "model": guard.get("model"),
+                "pii_detected": pii.get("pii_detected", False),
+                "emails_redacted": pii.get("emails", 0),
+                "phones_redacted": pii.get("phones", 0),
+                "categories": guard.get("categories", []),
+            }
+            self.memory.save_trustops_event(
+                company_id=company_id,
+                session_id=session_id or "",
+                agent_name="HR",
+                event_type="hr_privacy_guard",
+                payload={
+                    "candidate": cand_name,
+                    "safe": guard.get("safe", True),
+                    "provider": guard.get("provider"),
+                    "pii": pii,
+                    "categories": guard.get("categories", []),
+                },
+            )
+
+            guarded_candidate = dict(candidate)
+            guarded_candidate["resume_text"] = redact_pii(candidate.get("resume_text", ""))[0]
+            guarded_candidate["interview_transcript"] = redact_pii(
+                candidate.get("interview_transcript", "")
+            )[0]
+
             evaluation = await self._evaluate_single_candidate(
                 position=position,
-                candidate=candidate,
+                candidate=guarded_candidate,
                 business_plan_context=business_plan_context,
                 cto_memory=cto_memory,
                 cfo_memory=cfo_memory,

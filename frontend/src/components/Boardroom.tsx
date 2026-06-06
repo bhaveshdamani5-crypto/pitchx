@@ -7,6 +7,7 @@ import ScoreGauges from './ScoreGauges';
 import BusinessPlanView from './BusinessPlanView';
 import RealityGapBanner from './RealityGapBanner';
 import BoardResolutionCard from './BoardResolutionCard';
+import TrustOpsPanel from './TrustOpsPanel';
 
 interface BoardroomProps {
   state: AppState;
@@ -215,6 +216,8 @@ export default function Boardroom({ state, onBack, onGoToHR }: BoardroomProps) {
               killProbability={state.killProbability}
               isDebating={state.isDebating}
             />
+
+            <TrustOpsPanel trustOps={state.trustOps} />
 
             {state.boardResolution && !state.isDebating && (
               <div style={{ marginTop: 20 }}>

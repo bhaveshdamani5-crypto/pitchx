@@ -186,6 +186,21 @@ async def get_company_brief(company_id: str):
     return {"company_id": company_id, "brief": brief}
 
 
+@app.get("/api/company/{company_id}/trustops")
+async def get_company_trustops(company_id: str):
+    company = memory.get_company(company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    events = memory.get_trustops_events(company_id)
+    for event in events:
+        if event.get("payload_json") and isinstance(event["payload_json"], str):
+            try:
+                event["payload_json"] = json.loads(event["payload_json"])
+            except json.JSONDecodeError:
+                pass
+    return {"company_id": company_id, "events": events}
+
+
 @app.get("/api/companies")
 async def list_companies():
     companies = memory.list_companies()
