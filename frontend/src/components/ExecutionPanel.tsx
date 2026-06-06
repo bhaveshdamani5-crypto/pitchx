@@ -1,0 +1,180 @@
+import { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { Terminal, Send, Briefcase, CheckCircle, AlertCircle, Play } from 'lucide-react';
+import { executeHR, streamPostSSE } from '../api';
+
+interface ExecutionPanelProps {
+  companyId: string;
+  hrResult: any;
+}
+
+export default function ExecutionPanel({ companyId, hrResult }: ExecutionPanelProps) {
+  const [logs, setLogs] = useState<{ id: string; type: string; text: string; details?: any }[]>([]);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [isDone, setIsDone] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
+  const addLog = (type: string, text: string, details?: any) => {
+    setLogs((prev) => [
+      ...prev,
+      { id: Math.random().toString(36).substr(2, 9), type, text, details },
+    ]);
+  };
+
+  const handleExecute = async () => {
+    if (isExecuting || isDone) return;
+    setIsExecuting(true);
+    setLogs([]);
+
+    try {
+      addLog('info', 'Connecting to NVIDIA NIM Tool Calling API...');
+      const response = await executeHR({
+        company_id: companyId,
+        hr_result: hrResult,
+      });
+
+      await streamPostSSE(
+        response,
+        (event) => {
+          if (event.type === 'execution_start' || event.type === 'execution_progress') {
+            addLog('info', event.message);
+          } else if (event.type === 'tool_call') {
+            addLog('tool', `Calling tool \`${event.function}\``, event.arguments);
+          } else if (event.type === 'tool_result') {
+            addLog('success', event.message);
+          } else if (event.type === 'error') {
+            addLog('error', event.message);
+          } else if (event.type === 'execution_done') {
+            addLog('done', event.message);
+          }
+        },
+        () => {
+          setIsExecuting(false);
+          setIsDone(true);
+        }
+      );
+    } catch (err: any) {
+      addLog('error', `Execution failed: ${err.message}`);
+      setIsExecuting(false);
+    }
+  };
+
+  return (
+    <div className="glass-card" style={{ marginTop: 20, border: '1px solid var(--accent-primary)', overflow: 'hidden' }}>
+      <div
+        style={{
+          background: 'rgba(59, 130, 246, 0.1)',
+          padding: '16px 20px',
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Terminal size={18} color="var(--accent-primary)" />
+          <h3 style={{ fontSize: '0.9rem', fontWeight: 600, margin: 0 }}>NVIDIA Execution Agent</h3>
+        </div>
+
+        {!isExecuting && !isDone && (
+          <button className="btn btn-primary btn-sm" onClick={handleExecute}>
+            <Play size={14} /> Approve & Execute Actions
+          </button>
+        )}
+        {isExecuting && (
+          <span style={{ fontSize: '0.8rem', color: 'var(--accent-primary)' }}>
+            <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> Executing...
+          </span>
+        )}
+        {isDone && (
+          <span style={{ fontSize: '0.8rem', color: '#34d399', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <CheckCircle size={14} /> Completed
+          </span>
+        )}
+      </div>
+
+      <div
+        style={{
+          background: '#0a0a0a',
+          padding: 20,
+          minHeight: 200,
+          maxHeight: 400,
+          overflowY: 'auto',
+          fontFamily: 'var(--font-mono)',
+          fontSize: '0.85rem',
+        }}
+      >
+        {logs.length === 0 && !isExecuting && (
+          <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '40px 0' }}>
+            Click "Approve & Execute Actions" to let the agent autonomously send emails and post jobs.
+          </div>
+        )}
+
+        {logs.map((log) => (
+          <motion.div
+            key={log.id}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            style={{ marginBottom: 12, display: 'flex', gap: 10, color: '#e5e5e5' }}
+          >
+            <div style={{ marginTop: 2 }}>
+              {log.type === 'info' && <span style={{ color: '#60a5fa' }}>▶</span>}
+              {log.type === 'tool' && <span style={{ color: '#a78bfa' }}>⚡</span>}
+              {log.type === 'success' && <CheckCircle size={14} color="#34d399" />}
+              {log.type === 'error' && <AlertCircle size={14} color="#f87171" />}
+              {log.type === 'done' && <CheckCircle size={14} color="#34d399" />}
+            </div>
+            
+            <div style={{ flex: 1 }}>
+              <div style={{ 
+                color: log.type === 'error' ? '#f87171' : 
+                       log.type === 'tool' ? '#a78bfa' : 
+                       log.type === 'success' || log.type === 'done' ? '#34d399' : '#e5e5e5' 
+              }}>
+                {log.text}
+              </div>
+              
+              {log.details && (
+                <div style={{ 
+                  marginTop: 8, 
+                  background: 'rgba(255,255,255,0.05)', 
+                  padding: 10, 
+                  borderRadius: 4,
+                  border: '1px solid rgba(255,255,255,0.1)'
+                }}>
+                  {log.details.to_email && (
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ color: '#9ca3af' }}>To:</span> {log.details.to_email} <br />
+                      <span style={{ color: '#9ca3af' }}>Subject:</span> {log.details.subject}
+                    </div>
+                  )}
+                  {log.details.job_title && (
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ color: '#9ca3af' }}>Job Title:</span> {log.details.job_title} <br />
+                      <span style={{ color: '#9ca3af' }}>Platforms:</span> {log.details.platforms?.join(', ')}
+                    </div>
+                  )}
+                  {log.details.body && (
+                    <div style={{ color: '#d1d5db', whiteSpace: 'pre-wrap', marginTop: 8, fontSize: '0.8rem', paddingLeft: 8, borderLeft: '2px solid #4b5563' }}>
+                      {log.details.body}
+                    </div>
+                  )}
+                  {log.details.job_description && (
+                    <div style={{ color: '#d1d5db', whiteSpace: 'pre-wrap', marginTop: 8, fontSize: '0.8rem', paddingLeft: 8, borderLeft: '2px solid #4b5563' }}>
+                      {log.details.job_description}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        ))}
+        <div ref={logsEndRef} />
+      </div>
+    </div>
+  );
+}

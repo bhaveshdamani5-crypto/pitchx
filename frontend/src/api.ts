@@ -103,6 +103,19 @@ export async function startHR(data: {
   return res.json();
 }
 
+export async function executeHR(data: {
+  company_id: string;
+  hr_result: any;
+}) {
+  const res = await fetch(`${API_BASE}/api/execute/hr`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to execute HR decisions');
+  return res;
+}
+
 export function createSSEStream(url: string, onEvent: (event: any) => void, onDone?: () => void) {
   const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
   const eventSource = new EventSource(fullUrl);

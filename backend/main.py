@@ -31,6 +31,7 @@ load_dotenv()
 from memory_manager import MemoryManager
 from debate_engine import DebateEngine, HREngine
 from research_ingestion import ingest_company
+from execution_engine import ExecutionEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ app.add_middleware(
 memory = MemoryManager()
 debate_engine = DebateEngine(memory_manager=memory)
 hr_engine = HREngine(memory_manager=memory)
+execution_engine = ExecutionEngine(memory_manager=memory)
 
 # Store active sessions for streaming
 active_sessions = {}
@@ -101,6 +103,10 @@ class HRStartRequest(BaseModel):
     position: dict = Field(default_factory=lambda: {"title": "Engineer", "level": "Senior"})
     candidates: list = Field(default_factory=list)
     business_plan_context: Optional[str] = None
+
+class HRExecutionRequest(BaseModel):
+    company_id: str
+    hr_result: dict
 
 
 # ─── Health Check ─────────────────────────────────────────────────
@@ -415,6 +421,31 @@ async def get_hr_decisions(company_id: str):
                 pass
         result.append(item)
     return {"decisions": result}
+
+@app.post("/api/execute/hr")
+async def execute_hr(req: HRExecutionRequest):
+    async def event_stream():
+        try:
+            async for event in execution_engine.execute_hr_decisions(
+                hr_result=req.hr_result,
+                company_id=req.company_id
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            logger.error(f"Execution stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        finally:
+            yield "data: {\"type\": \"stream_end\"}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ─── Run ─────────────────────────────────────────────────────────

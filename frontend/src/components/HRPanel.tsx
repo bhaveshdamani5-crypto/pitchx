@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Plus, UserPlus, Trash2, Play } from 'lucide-react';
 import { startHR, createSSEStream } from '../api';
 import type { BusinessPlan, CandidateInput, CandidateEvaluation, HRResult } from '../types';
+import ExecutionPanel from './ExecutionPanel';
 
 interface HRPanelProps {
   companyId?: string;
@@ -386,6 +387,11 @@ export default function HRPanel({ companyId, sessionId, businessPlan, onBack }: 
                 </p>
               )}
             </div>
+          )}
+
+          {/* Execution Engine Panel */}
+          {hrResult && companyId && (
+            <ExecutionPanel companyId={companyId} hrResult={hrResult} />
           )}
         </motion.div>
       )}
