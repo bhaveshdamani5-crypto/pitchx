@@ -11,10 +11,11 @@ import logging
 from typing import AsyncGenerator, Optional
 from datetime import datetime
 
-import anthropic
+from openai import OpenAI
 
 from agents import AGENT_CONFIG, build_agent_prompt_with_memory
 from memory_manager import MemoryManager
+from claim_parser import parse_claims, is_memory_key_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,10 @@ class DebateEngine:
 
     def __init__(self, memory_manager: MemoryManager = None):
         self.memory = memory_manager or MemoryManager()
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        api_key = os.getenv("OPENROUTER_API_KEY")
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not set")
-        self.client = anthropic.Anthropic(api_key=api_key)
+            raise ValueError("OPENROUTER_API_KEY not set")
+        self.client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
     async def run_debate(
         self,
@@ -50,13 +51,15 @@ class DebateEngine:
         budget: float = None,
         market: str = None,
         timeline_months: int = None,
+        reality_gap: dict = None,
     ) -> AsyncGenerator[dict, None]:
         """
         Run the full debate loop and yield SSE events.
         """
         # Build idea context string
         idea_context = self._build_idea_context(
-            idea, mode, challenge, founder_background, budget, market, timeline_months
+            idea, mode, challenge, founder_background, budget, market, timeline_months,
+            reality_gap=reality_gap,
         )
 
         # Load memories for all agents
@@ -73,6 +76,15 @@ class DebateEngine:
             yield {
                 "type": "research_injected",
                 "brief_summary": company_brief.get("product_description", "")[:200],
+            }
+
+        if reality_gap and reality_gap.get("score", 0) > 0:
+            yield {
+                "type": "reality_gap_loaded",
+                "score": reality_gap.get("score"),
+                "severity": reality_gap.get("severity"),
+                "gaps": reality_gap.get("gaps", [])[:5],
+                "summary": reality_gap.get("summary", ""),
             }
 
         all_responses = {}
@@ -190,16 +202,33 @@ class DebateEngine:
             business_plan=business_plan,
         )
 
+        kill_probability = self._extract_kill_probability(all_responses)
+
+        board_resolution = await self._synthesize_board_vote(
+            idea_context, all_responses, conflicts, score, kill_probability
+        )
+
         yield {
             "type": "business_plan",
             "plan": business_plan,
             "investor_readiness_score": score,
+            "kill_probability": kill_probability,
         }
 
-        # Save agent memories
+        yield {"type": "board_resolution", "resolution": board_resolution}
+
+        # Save agent memories with scope enforcement
         memory_saves = self._extract_memory_saves(all_responses)
         for agent_name, memories in memory_saves.items():
             for key, value in memories.items():
+                if not is_memory_key_allowed(agent_name, key, AGENT_CONFIG):
+                    yield {
+                        "type": "memory_rejected",
+                        "agent": agent_name,
+                        "key": key,
+                        "reason": "out_of_scope",
+                    }
+                    continue
                 self.memory.save_agent_memory(company_id, agent_name, key, value)
                 yield {
                     "type": "memory_save",
@@ -207,7 +236,13 @@ class DebateEngine:
                     "key": key,
                 }
 
-        yield {"type": "done", "session_id": session_id, "score": score}
+        yield {
+            "type": "done",
+            "session_id": session_id,
+            "score": score,
+            "kill_probability": kill_probability,
+            "board_verdict": board_resolution.get("board_verdict"),
+        }
 
     async def _run_single_agent(
         self,
@@ -254,27 +289,27 @@ Provide your analysis now. Be specific, cite data, use numbers where possible.""
 
             # Stream response
             def create_stream():
-                return self.client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                return self.client.chat.completions.create(
+                    model="meta-llama/llama-3.3-70b-instruct:free",
                     max_tokens=MAX_TOKENS_PER_AGENT,
-                    system=system_prompt,
-                    messages=[{"role": "user", "content": user_message}],
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message}
+                    ],
                     stream=True,
                 )
 
             stream = await loop.run_in_executor(None, create_stream)
 
-            for event in stream:
-                if hasattr(event, 'type'):
-                    if event.type == "content_block_delta":
-                        if hasattr(event.delta, 'text'):
-                            text = event.delta.text
-                            full_response += text
-                            yield {
-                                "type": "token",
-                                "agent": agent_name,
-                                "content": text,
-                            }
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    text = chunk.choices[0].delta.content
+                    full_response += text
+                    yield {
+                        "type": "token",
+                        "agent": agent_name,
+                        "content": text,
+                    }
 
         except Exception as e:
             logger.error(f"Agent {agent_name} error: {e}")
@@ -288,16 +323,23 @@ Provide your analysis now. Be specific, cite data, use numbers where possible.""
         # Extract confidence score
         confidence = self._extract_confidence(full_response)
 
+        sources = (company_brief or {}).get("research_sources", [])
+        claims = parse_claims(full_response, sources)
+        for claim in claims:
+            yield {"type": "claim", "agent": agent_name, **claim}
+
         yield {
             "type": "agent_done",
             "agent": agent_name,
             "confidence": confidence,
             "full_response": full_response,
             "round": round_num,
+            "claims_count": len(claims),
         }
 
     def _build_idea_context(
-        self, idea, mode, challenge, founder_background, budget, market, timeline_months
+        self, idea, mode, challenge, founder_background, budget, market, timeline_months,
+        reality_gap=None,
     ) -> str:
         parts = [f"MODE: {mode}"]
         parts.append(f"IDEA/COMPANY: {idea}")
@@ -311,7 +353,75 @@ Provide your analysis now. Be specific, cite data, use numbers where possible.""
             parts.append(f"TARGET MARKET: {market}")
         if timeline_months:
             parts.append(f"TIMELINE: {timeline_months} months")
+        if reality_gap and reality_gap.get("gaps"):
+            parts.append(f"\nREALITY GAP SCORE: {reality_gap.get('score')}/100 ({reality_gap.get('severity')})")
+            parts.append("NARRATIVE-RESEARCH CONTRADICTIONS (address these explicitly):")
+            for gap in reality_gap.get("gaps", [])[:5]:
+                parts.append(
+                    f"  - Founder: {gap.get('claim')} | Reality: {gap.get('reality')} "
+                    f"[source: {gap.get('source')}]"
+                )
         return "\n".join(parts)
+
+    def _extract_kill_probability(self, responses: dict) -> int:
+        devil_resp = responses.get("Devil", "")
+        match = re.search(r"KILL_PROBABILITY:\s*(\d+)/10", devil_resp, re.IGNORECASE)
+        return int(match.group(1)) if match else 5
+
+    async def _synthesize_board_vote(
+        self, idea_context, responses, conflicts, investor_score, kill_probability
+    ) -> dict:
+        """Produce structured board resolution from debate."""
+        truncated = {k: v[:600] for k, v in responses.items()}
+
+        prompt = f"""Synthesize this boardroom debate into a structured board resolution.
+
+CONTEXT: {idea_context[:500]}
+INVESTOR READINESS: {investor_score}/100
+KILL PROBABILITY: {kill_probability}/10
+CONFLICTS: {json.dumps(conflicts[:5])}
+AGENT POSITIONS: {json.dumps(truncated)[:4000]}
+
+Return ONLY valid JSON:
+{{
+  "votes": {{"CEO": "APPROVE|CONDITIONAL|REJECT", "CFO": "...", "CTO": "...", "CMO": "...", "Devil": "REJECT"}},
+  "conditions": ["CFO: specific condition if conditional"],
+  "dissent": "Devil's primary objection in one sentence",
+  "board_verdict": "GO|CONDITIONAL_GO|NO_GO"
+}}
+Return ONLY JSON."""
+
+        try:
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.client.chat.completions.create(
+                    model="meta-llama/llama-3.3-70b-instruct:free",
+                    max_tokens=800,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+            )
+            text = response.choices[0].message.content.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+                if text.endswith("```"):
+                    text = text[:-3]
+                text = text.strip()
+            return json.loads(text)
+        except Exception as e:
+            logger.error(f"Board vote synthesis error: {e}")
+            return {
+                "votes": {
+                    "CEO": "CONDITIONAL",
+                    "CFO": "CONDITIONAL",
+                    "CTO": "APPROVE",
+                    "CMO": "APPROVE",
+                    "Devil": "REJECT",
+                },
+                "conditions": ["Resolve key conflicts before proceeding"],
+                "dissent": f"Kill probability {kill_probability}/10",
+                "board_verdict": "CONDITIONAL_GO" if investor_score >= 50 else "NO_GO",
+            }
 
     def _build_cross_exam_context(self, responses: dict) -> str:
         """Build context from Round 1 responses for cross-examination."""
@@ -515,14 +625,14 @@ Return ONLY valid JSON. No markdown, no explanation."""
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: self.client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                lambda: self.client.chat.completions.create(
+                    model="meta-llama/llama-3.3-70b-instruct:free",
                     max_tokens=2500,
                     messages=[{"role": "user", "content": synthesis_prompt}],
                 ),
             )
 
-            text = response.content[0].text.strip()
+            text = response.choices[0].message.content.strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[1] if "\n" in text else text[3:]
                 if text.endswith("```"):
@@ -545,10 +655,10 @@ class HREngine:
 
     def __init__(self, memory_manager: MemoryManager = None):
         self.memory = memory_manager or MemoryManager()
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        api_key = os.getenv("OPENROUTER_API_KEY")
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not set")
-        self.client = anthropic.Anthropic(api_key=api_key)
+            raise ValueError("OPENROUTER_API_KEY not set")
+        self.client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
     async def evaluate_candidates(
         self,
@@ -687,15 +797,17 @@ class HREngine:
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: self.client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                lambda: self.client.chat.completions.create(
+                    model="meta-llama/llama-3.3-70b-instruct:free",
                     max_tokens=1500,
-                    system=hr_prompt + "\n\nReturn your evaluation as valid JSON only.",
-                    messages=[{"role": "user", "content": user_message}],
+                    messages=[
+                        {"role": "system", "content": hr_prompt + "\n\nReturn your evaluation as valid JSON only."},
+                        {"role": "user", "content": user_message}
+                    ],
                 ),
             )
 
-            text = response.content[0].text.strip()
+            text = response.choices[0].message.content.strip()
             # Try to extract JSON from response
             if "```" in text:
                 json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)

@@ -6,7 +6,10 @@ import os
 import json
 import asyncio
 import logging
+import re
 from typing import Optional, AsyncGenerator
+
+from reality_gap import compute_reality_gap
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +21,10 @@ except ImportError:
     TAVILY_AVAILABLE = False
 
 try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
 except ImportError:
-    ANTHROPIC_AVAILABLE = False
+    OPENAI_AVAILABLE = False
 
 
 RESEARCH_QUERIES = {
@@ -95,23 +98,62 @@ async def search_tavily(
         return {"error": str(e), "answer": "", "results": []}
 
 
+def _company_slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+def _load_cached_brief(company_name: str) -> Optional[dict]:
+    """Load pre-cached brief by normalized company slug (backend only, never shown in UI)."""
+    cache_dir = os.path.join(os.path.dirname(__file__), "demo_cache")
+    slug = _company_slug(company_name)
+    cache_path = os.path.join(cache_dir, f"{slug}.json")
+    if os.path.isfile(cache_path):
+        try:
+            with open(cache_path, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load cache for {slug}: {e}")
+    return None
+
+
 async def ingest_company(
     company_name: str,
     website_url: str = None,
     industry: str = None,
+    user_context: dict = None,
+    use_cache: bool = True,
 ) -> AsyncGenerator[dict, None]:
     """
     Run research queries and yield progress events.
     Final event contains the synthesized CompanyBrief.
     """
     tavily_key = os.getenv("TAVILY_API_KEY")
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-
-    if not tavily_key:
-        yield {"type": "error", "message": "TAVILY_API_KEY not set"}
-        return
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
 
     industry = industry or "technology"
+
+    # Optional demo cache (fast fallback — transparent to user)
+    if use_cache:
+        cached = _load_cached_brief(company_name)
+        if cached:
+            yield {"type": "research_start", "queries": len(RESEARCH_QUERIES), "cached": True}
+            for key in RESEARCH_QUERIES:
+                yield {"type": "query_done", "key": key, "found": True, "cached": True}
+            yield {"type": "synthesis_start", "cached": True}
+            yield {"type": "brief_ready", "brief": cached, "cached": True}
+            if user_context:
+                gap = await compute_reality_gap(user_context, cached, openrouter_key)
+                yield {"type": "reality_gap", **gap}
+            return
+
+    if not tavily_key:
+        yield {
+            "type": "research_limited",
+            "message": "Live research unavailable — proceeding with provided context only.",
+        }
+        brief = _build_fallback_brief(company_name, website_url, {})
+        yield {"type": "brief_ready", "brief": brief, "limited": True}
+        return
 
     yield {"type": "research_start", "queries": len(RESEARCH_QUERIES)}
 
@@ -141,24 +183,28 @@ async def ingest_company(
     # Synthesize into CompanyBrief using Claude
     yield {"type": "synthesis_start"}
 
-    brief = await synthesize_brief(company_name, website_url, raw_data, anthropic_key)
+    brief = await synthesize_brief(company_name, website_url, raw_data, openrouter_key)
 
     yield {"type": "brief_ready", "brief": brief}
+
+    if user_context:
+        gap = await compute_reality_gap(user_context, brief, openrouter_key)
+        yield {"type": "reality_gap", **gap}
 
 
 async def synthesize_brief(
     company_name: str,
     website_url: str,
     raw_data: dict,
-    anthropic_key: str,
+    openrouter_key: str,
 ) -> dict:
     """Use Claude to synthesize raw search results into structured CompanyBrief."""
-    if not ANTHROPIC_AVAILABLE or not anthropic_key:
+    if not OPENAI_AVAILABLE or not openrouter_key:
         # Return a minimal brief from raw data
         return _build_fallback_brief(company_name, website_url, raw_data)
 
     try:
-        client = anthropic.Anthropic(api_key=anthropic_key)
+        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=openrouter_key)
 
         # Truncate raw data to fit token limits
         truncated = {}
@@ -218,14 +264,14 @@ Return ONLY the JSON. No markdown, no explanation."""
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: client.messages.create(
-                model="claude-sonnet-4-20250514",
+            lambda: client.chat.completions.create(
+                model="meta-llama/llama-3.3-70b-instruct:free",
                 max_tokens=2000,
                 messages=[{"role": "user", "content": synthesis_prompt}],
             ),
         )
 
-        text = response.content[0].text.strip()
+        text = response.choices[0].message.content.strip()
         # Clean up potential markdown wrapping
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
