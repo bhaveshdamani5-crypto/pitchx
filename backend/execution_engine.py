@@ -14,7 +14,7 @@ class ExecutionEngine:
     
     def __init__(self, memory_manager: Optional[MemoryManager] = None):
         self.memory = memory_manager or MemoryManager()
-        api_key = os.getenv("NVIDIA_API_KEY", "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")
+        api_key = os.getenv("NVIDIA_API_KEY")
         if not api_key:
             raise ValueError("NVIDIA_API_KEY not set")
         

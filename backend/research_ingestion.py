@@ -128,7 +128,7 @@ async def ingest_company(
     Final event contains the synthesized CompanyBrief.
     """
     tavily_key = os.getenv("TAVILY_API_KEY")
-    nvidia_key = os.getenv("NVIDIA_API_KEY", "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")
+    nvidia_key = os.getenv("NVIDIA_API_KEY")
 
     industry = industry or "technology"
 
