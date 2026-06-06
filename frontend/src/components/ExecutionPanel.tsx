@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Terminal, CheckCircle, AlertCircle, Play, Linkedin, MapPin } from 'lucide-react';
+import { Terminal, CheckCircle, AlertCircle, Play, User, MapPin } from 'lucide-react';
 import { executeHR, streamPostSSE } from '../api';
 
 interface ExecutionPanelProps {
@@ -207,7 +207,7 @@ export default function ExecutionPanel({ companyId, hrResult }: ExecutionPanelPr
               alignItems: 'center',
               gap: 8
             }}>
-              <Linkedin size={16} /> Live Sourced Candidates
+              <User size={16} /> Live Sourced Candidates
             </h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
               {sourcedProfiles.map((profile, i) => (
@@ -247,7 +247,7 @@ export default function ExecutionPanel({ companyId, hrResult }: ExecutionPanelPr
                     onClick={() => window.open(profile.linkedin_url, '_blank')}
                     style={{ width: '100%', marginTop: 'auto', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.2)' }}
                   >
-                    <Linkedin size={14} /> View Profile
+                    <User size={14} /> View Profile
                   </button>
                 </motion.div>
               ))}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Plus, UserPlus, Trash2, Play } from 'lucide-react';
-import { startHR, createSSEStream } from '../api';
+import { startHR, createSSEStream, createCompany } from '../api';
 import type { BusinessPlan, CandidateInput, CandidateEvaluation, HRResult } from '../types';
 import ExecutionPanel from './ExecutionPanel';
 
@@ -56,7 +56,7 @@ export default function HRPanel({ companyId, sessionId, businessPlan, onBack }: 
   };
 
   const handleEvaluate = async () => {
-    if (!companyId || !position.title || candidates.length === 0) return;
+    if (!position.title || candidates.length === 0) return;
 
     setIsEvaluating(true);
     setError('');
@@ -65,8 +65,17 @@ export default function HRPanel({ companyId, sessionId, businessPlan, onBack }: 
     setGuardEvents([]);
 
     try {
+      let activeCompanyId = companyId;
+      if (!activeCompanyId) {
+        const compRes = await createCompany({
+          name: `${position.title} Evaluation`,
+          mode: 'hr_only',
+        });
+        activeCompanyId = compRes.company_id;
+      }
+
       const res = await startHR({
-        company_id: companyId,
+        company_id: activeCompanyId,
         session_id: sessionId,
         position: {
           title: position.title,

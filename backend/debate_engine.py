@@ -821,7 +821,7 @@ class HREngine:
             # Save HR decision
             self.memory.save_hr_decision(
                 company_id=company_id,
-                session_id=session_id or "",
+                session_id=session_id or None,
                 position=position.get("title", ""),
                 candidate_name=cand_name,
                 fit_score=evaluation.get("composite_fit_score", 0),
