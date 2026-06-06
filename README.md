@@ -63,7 +63,7 @@ PitchX uses a multi-layered orchestration architecture:
 3. **Research Ingestion Layer:** Uses Tavily and Anthropic's built-in web search to fire 8 parallel queries gathering market size, Glassdoor reviews, customer feedback, and funding news into a structured `CompanyBrief`.
 4. **Persistent Memory Layer:** SQLite (`pitchx_memory.db`) storing data in isolated company namespaces, tracking `agent_memories`, `debate_sessions`, and `hr_decisions`.
 5. **Orchestrator Agent:** Loads memory, injects briefs, manages debate rounds, resolves conflicts, and triggers cross-examinations.
-6. **Execution Agent Layer:** Powered by NVIDIA API (`meta/llama3-8b-instruct`).
+6. **Execution Agent Layer:** Powered by NVIDIA NIM (`meta/llama-3.1-70b-instruct`) with tool calling. Uses Apify and PhantomBuster to autonomously execute real-world actions like scraping LinkedIn and sending outreach messages, safely guarded by NVIDIA TrustOps.
 
 ---
 
@@ -75,6 +75,7 @@ PitchX uses a multi-layered orchestration architecture:
 * **CMO Agent:** Focuses on GTM, ICP, and brand. Uses actual customer review sentiment (from G2/Capterra) to exploit product gaps.
 * **Devil's Advocate:** The ultimate stress-tester. Uses negative reviews, competitor funding, and unresolved conflicts to calculate a **Kill Probability**.
 * **HR Agent (New in v2):** A dedicated Chief People Officer. Takes the generated business plan, budget, and tech stack requirements, and evaluates real candidate resumes/transcripts to output a Ranked List, Composite Fit Score (0-100), and Team Gap Analysis.
+* **Execution Agent:** The action-taker. Takes the HR Gap Analysis and uses tool-calling to autonomously scrape LinkedIn profiles (Apify) and send automated outreach messages (PhantomBuster) to fill team gaps.
 
 ---
 
@@ -106,6 +107,8 @@ cp .env.example .env
 # Required keys:
 # NVIDIA_API_KEY=your_nvidia_api_key
 # TAVILY_API_KEY=your_tavily_api_key
+# APIFY_API_TOKEN=your_apify_api_token (for LinkedIn Sourcing)
+# PHANTOMBUSTER_API_KEY=your_phantom_buster_api_key (for LinkedIn Messaging)
 
 # Run the FastAPI server (starts on http://localhost:8000)
 python3 main.py
@@ -143,7 +146,17 @@ When presenting PitchX, follow this choreography to highlight the exact features
 2. **The Provenance Badge Click:** During the debate, wait for the Devil's Advocate to speak. Click the `[VERIFIED]` badge next to a brutal claim to instantly open the source URL (e.g., a real G2 review).
 3. **The Memory Theater (Session 2):** After running a session, open the *same company again*. Watch the CEO agent explicitly reference the previous session's output in their opening statement.
 4. **The HR Hand-off:** Show how the HR panel rejects a candidate *specifically* because their salary expectation exceeds the CFO's budget set in the previous debate round.
-5. **The Board Vote:** Conclude the demo by showing the structured Investor Score, Board Verdict (`CONDITIONAL_GO`), and Kill Probability.
+5. **Autonomous Execution (LinkedIn Sourcing):** Watch the Execution Engine take the HR Gap Analysis, autonomously scrape live LinkedIn profiles for missing roles using Apify, and queue outreach messages via PhantomBuster, all safely audited by NVIDIA TrustOps.
+6. **The Board Vote:** Conclude the demo by showing the structured Investor Score, Board Verdict (`CONDITIONAL_GO`), and Kill Probability.
+
+---
+
+## 🚀 What's Next (Roadmap)
+
+While PitchX already crosses the reality gap by grounding agents in live data and giving them execution capabilities, our future roadmap includes:
+1. **Deeper Execution Hooks:** Expanding the tool-calling repertoire to include automated calendar scheduling for interviews and CRM integrations (Salesforce/HubSpot).
+2. **Dynamic Knowledge Graphs:** Moving beyond isolated JSON briefs to a full graph representation of a company's market space to better track competitors over time.
+3. **Multi-Modal Board Meetings:** Adding voice synthesis so founders can verbally debate with the AI Board in real-time, bringing the stress-test to life.
 
 ---
 
