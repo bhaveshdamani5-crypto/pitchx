@@ -24,6 +24,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,6 +33,8 @@ from memory_manager import MemoryManager
 from debate_engine import DebateEngine, HREngine
 from research_ingestion import ingest_company
 from execution_engine import ExecutionEngine
+from voice_arena import VoiceArenaEngine
+from fastapi import WebSocket, WebSocketDisconnect
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -55,10 +58,17 @@ memory = MemoryManager()
 debate_engine = DebateEngine(memory_manager=memory)
 hr_engine = HREngine(memory_manager=memory)
 execution_engine = ExecutionEngine(memory_manager=memory)
+voice_arena_engine = VoiceArenaEngine(memory_manager=memory)
 
 # Store active sessions for streaming
 active_sessions = {}
 active_hr_sessions = {}
+
+# NVIDIA LLM Client for Chat
+aclient = AsyncOpenAI(
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=os.getenv("NVIDIA_API_KEY", "")
+)
 
 
 # ─── Request/Response Models ─────────────────────────────────────
@@ -107,6 +117,11 @@ class HRStartRequest(BaseModel):
 class HRExecutionRequest(BaseModel):
     company_id: str
     hr_result: dict
+
+class ChatSendRequest(BaseModel):
+    company_id: str
+    message: str
+    agent: str = "Board"
 
 
 # ─── Health Check ─────────────────────────────────────────────────
@@ -204,21 +219,7 @@ async def get_company_trustops(company_id: str):
 @app.get("/api/companies")
 async def list_companies():
     companies = memory.list_companies()
-    result = []
-    for c in companies:
-        sessions = memory.get_sessions(c["id"])
-        mem_count = memory.get_memory_count(c["id"])
-        result.append({
-            "id": c["id"],
-            "name": c["name"],
-            "website": c.get("website"),
-            "mode": c.get("mode", "new_idea"),
-            "sessions_count": len(sessions),
-            "memory_count": mem_count,
-            "last_active": c.get("last_active"),
-            "created_at": c.get("created_at"),
-        })
-    return {"companies": result}
+    return {"companies": companies}
 
 
 # ─── Research Routes ─────────────────────────────────────────────
@@ -369,6 +370,17 @@ async def get_session(session_id: str):
     return result
 
 
+# ─── Voice Arena Routes ──────────────────────────────────────────
+
+@app.websocket("/api/voice/connect/{company_id}")
+async def voice_connect(websocket: WebSocket, company_id: str):
+    await voice_arena_engine.connect(websocket)
+    try:
+        await voice_arena_engine.handle_session(websocket, session_id="live_voice", company_id=company_id)
+    except WebSocketDisconnect:
+        voice_arena_engine.disconnect(websocket)
+
+
 # ─── HR Routes ───────────────────────────────────────────────────
 
 @app.post("/api/hr/start")
@@ -462,6 +474,72 @@ async def execute_hr(req: HRExecutionRequest):
         },
     )
 
+
+# ─── Chat Routes ─────────────────────────────────────────────────
+
+@app.get("/api/chat/{company_id}")
+async def get_chat_history(company_id: str):
+    history = memory.get_chat_history(company_id)
+    return {"history": history}
+
+@app.post("/api/chat/send")
+async def send_chat_message(req: ChatSendRequest):
+    # Save user message
+    memory.save_chat_message(req.company_id, "user", req.message, agent_name=req.agent)
+    
+    company = memory.get_company(req.company_id)
+    history = memory.get_chat_history(req.company_id, limit=20)
+    
+    async def chat_stream():
+        try:
+            brief = company.get("company_brief", {}) if company else {}
+            if req.agent == "Board":
+                sys_prompt = f"You are the PitchX AI Board. You are advising the founders of {company.get('name', 'this company')}. "
+            else:
+                sys_prompt = f"You are the {req.agent} of the PitchX AI Board. You are advising the founders of {company.get('name', 'this company')}. Speak clearly from your specific role's perspective. "
+                
+            if brief:
+                sys_prompt += f"Brief context: {str(brief)[:500]}. "
+            sys_prompt += "Provide concise, actionable advice in a conversational tone."
+            
+            messages = [{"role": "system", "content": sys_prompt}]
+            
+            # Filter history by the selected agent, or show all if talking to the Board
+            for msg in history:
+                if req.agent == "Board" or msg.get("agent_name") == req.agent or msg["role"] == "user":
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+            
+            response = await aclient.chat.completions.create(
+                model="meta/llama3-8b-instruct",
+                messages=messages,
+                stream=True,
+                max_tokens=1024
+            )
+            
+            full_reply = ""
+            async for chunk in response:
+                if chunk.choices[0].delta.content:
+                    token = chunk.choices[0].delta.content
+                    full_reply += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+            
+            memory.save_chat_message(req.company_id, "assistant", full_reply, agent_name=req.agent)
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Chat stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            
+    return StreamingResponse(
+        chat_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 # ─── Run ─────────────────────────────────────────────────────────
 

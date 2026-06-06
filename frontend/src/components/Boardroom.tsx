@@ -8,17 +8,19 @@ import BusinessPlanView from './BusinessPlanView';
 import RealityGapBanner from './RealityGapBanner';
 import BoardResolutionCard from './BoardResolutionCard';
 import TrustOpsPanel from './TrustOpsPanel';
+import ChatPanel from './ChatPanel';
 
 interface BoardroomProps {
   state: AppState;
   onBack: () => void;
   onDebateEvent: (event: any) => void;
   onGoToHR: () => void;
+  onGoToVoiceArena?: () => void;
 }
 
-export default function Boardroom({ state, onBack, onGoToHR }: BoardroomProps) {
+export default function Boardroom({ state, onBack, onGoToHR, onGoToVoiceArena }: BoardroomProps) {
   const debateEndRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'debate' | 'plan' | 'memory'>('debate');
+  const [activeTab, setActiveTab] = useState<'debate' | 'plan' | 'memory' | 'chat'>('debate');
 
   // Auto-scroll to latest agent message
   useEffect(() => {
@@ -207,6 +209,12 @@ export default function Boardroom({ state, onBack, onGoToHR }: BoardroomProps) {
           >
             🧠 Memory
           </button>
+          <button
+            className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+            onClick={() => setActiveTab('chat')}
+          >
+            💬 Chat
+          </button>
         </div>
 
         {activeTab === 'debate' && (
@@ -264,6 +272,11 @@ export default function Boardroom({ state, onBack, onGoToHR }: BoardroomProps) {
                 <button className="btn btn-secondary" onClick={onGoToHR}>
                   <Users size={16} /> Open HR Panel
                 </button>
+                {onGoToVoiceArena && (
+                  <button className="btn btn-primary" onClick={onGoToVoiceArena} style={{ background: 'var(--accent-gradient)' }}>
+                    🎙️ Enter Live Voice Arena
+                  </button>
+                )}
                 <button
                   className="btn btn-ghost btn-sm"
                   onClick={() => {
@@ -327,6 +340,12 @@ export default function Boardroom({ state, onBack, onGoToHR }: BoardroomProps) {
                 <p>Memory saves will appear as agents complete their analysis.</p>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'chat' && (
+          <div className="glass-card" style={{ height: 'calc(100vh - 200px)', overflow: 'hidden' }}>
+            <ChatPanel companyId={state.companyId!} />
           </div>
         )}
       </div>

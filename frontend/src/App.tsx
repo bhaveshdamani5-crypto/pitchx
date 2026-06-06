@@ -16,6 +16,7 @@ import IdeaInput from './components/IdeaInput';
 import CompanyInput from './components/CompanyInput';
 import Boardroom from './components/Boardroom';
 import HRPanel from './components/HRPanel';
+import VoiceArena from './components/VoiceArena';
 import Header from './components/Header';
 import { createCompany, startPitch, createSSEStream } from './api';
 import type { Company } from './types';
@@ -392,6 +393,7 @@ function App() {
             onBack={goHome}
             onDebateEvent={handleDebateEvent}
             onGoToHR={() => updateState({ view: 'hr_panel' })}
+            onGoToVoiceArena={() => updateState({ view: 'voice_arena' })}
           />
         );
 
@@ -406,6 +408,14 @@ function App() {
                 ? updateState({ view: 'boardroom' })
                 : goHome()
             }
+          />
+        );
+
+      case 'voice_arena':
+        return (
+          <VoiceArena
+            companyId={state.companyId!}
+            onBack={() => updateState({ view: 'boardroom' })}
           />
         );
 

@@ -244,13 +244,20 @@ export interface CompanyBrief {
 
 // ─── App State ──────────────────────────────────
 
-export type AppView = 'home' | 'idea_input' | 'company_input' | 'boardroom' | 'hr_panel';
+export type AppView = 'home' | 'idea_input' | 'company_input' | 'boardroom' | 'hr_panel' | 'voice_arena';
 
 export interface MemoryEvent {
   agent: string;
   key: string;
   rejected?: boolean;
   reason?: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  agent_name?: string;
+  content: string;
+  created_at?: string;
 }
 
 export interface TrustOpsState {
