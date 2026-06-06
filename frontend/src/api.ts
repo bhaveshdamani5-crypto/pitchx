@@ -41,6 +41,12 @@ export async function startPitch(data: {
   budget?: number;
   market?: string;
   timeline_months?: number;
+  reality_gap?: {
+    score: number;
+    severity: string;
+    gaps: Array<{ claim: string; reality: string; source: string; severity: string }>;
+    summary?: string;
+  };
 }) {
   const res = await fetch(`${API_BASE}/api/pitch/start`, {
     method: 'POST',
@@ -56,6 +62,11 @@ export async function startResearch(data: {
   company_name: string;
   website_url?: string;
   industry?: string;
+  stage?: string;
+  challenge?: string;
+  monthly_revenue?: number;
+  team_size?: number;
+  self_description?: string;
 }) {
   const res = await fetch(`${API_BASE}/api/research/ingest`, {
     method: 'POST',

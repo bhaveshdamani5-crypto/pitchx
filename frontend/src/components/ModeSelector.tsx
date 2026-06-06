@@ -1,8 +1,12 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Lightbulb, Building2, Users } from 'lucide-react';
+import { Lightbulb, Building2, Users, Brain } from 'lucide-react';
+import { listCompanies } from '../api';
+import type { Company } from '../types';
 
 interface ModeSelectorProps {
   onSelect: (mode: 'new_idea' | 'existing' | 'hr_only') => void;
+  onResumeCompany?: (company: Company) => void;
 }
 
 const modes = [
@@ -35,7 +39,20 @@ const modes = [
   },
 ];
 
-export default function ModeSelector({ onSelect }: ModeSelectorProps) {
+export default function ModeSelector({ onSelect, onResumeCompany }: ModeSelectorProps) {
+  const [returning, setReturning] = useState<Company[]>([]);
+
+  useEffect(() => {
+    listCompanies()
+      .then((res) => {
+        const withMemory = (res.companies || []).filter(
+          (c: Company) => c.memory_count > 0 || c.sessions_count > 0,
+        );
+        setReturning(withMemory.slice(0, 6));
+      })
+      .catch(() => setReturning([]));
+  }, []);
+
   return (
     <div className="mode-selector">
       <motion.div
@@ -81,6 +98,33 @@ export default function ModeSelector({ onSelect }: ModeSelectorProps) {
         ))}
       </div>
 
+      {returning.length > 0 && onResumeCompany && (
+        <motion.div
+          className="returning-companies"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+        >
+          <h4>
+            <Brain size={14} /> Continue a Previous Session
+          </h4>
+          <div className="returning-list">
+            {returning.map((company) => (
+              <button
+                key={company.id}
+                className="returning-chip"
+                onClick={() => onResumeCompany(company)}
+              >
+                <span className="returning-name">{company.name}</span>
+                <span className="returning-meta">
+                  {company.memory_count} memories · {company.sessions_count} sessions
+                </span>
+              </button>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -96,6 +140,7 @@ export default function ModeSelector({ onSelect }: ModeSelectorProps) {
         <span>🧠 Persistent Agent Memory</span>
         <span>🔍 Live Research Intelligence</span>
         <span>⚔️ Adversarial Debate Protocol</span>
+        <span>🔒 Scoped Agent Permissions</span>
       </motion.div>
     </div>
   );

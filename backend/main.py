@@ -80,6 +80,7 @@ class PitchStartRequest(BaseModel):
     budget: Optional[float] = None
     market: Optional[str] = None
     timeline_months: Optional[int] = None
+    reality_gap: Optional[dict] = None
 
 
 class ResearchIngestRequest(BaseModel):
@@ -87,6 +88,11 @@ class ResearchIngestRequest(BaseModel):
     company_name: str
     website_url: Optional[str] = None
     industry: Optional[str] = None
+    stage: Optional[str] = None
+    challenge: Optional[str] = None
+    monthly_revenue: Optional[float] = None
+    team_size: Optional[int] = None
+    self_description: Optional[str] = None
 
 
 class HRStartRequest(BaseModel):
@@ -200,10 +206,20 @@ async def list_companies():
 async def start_research(req: ResearchIngestRequest):
     async def event_stream():
         try:
+            user_context = {
+                "company_name": req.company_name,
+                "stage": req.stage,
+                "challenge": req.challenge,
+                "monthly_revenue": req.monthly_revenue,
+                "team_size": req.team_size,
+                "self_description": req.self_description,
+                "industry": req.industry,
+            }
             async for event in ingest_company(
                 company_name=req.company_name,
                 website_url=req.website_url,
                 industry=req.industry,
+                user_context=user_context,
             ):
                 # Save brief to database when ready
                 if event.get("type") == "brief_ready":
@@ -261,6 +277,7 @@ async def start_pitch(req: PitchStartRequest):
         "budget": req.budget,
         "market": req.market,
         "timeline_months": req.timeline_months,
+        "reality_gap": req.reality_gap,
     }
 
     return {
@@ -291,6 +308,7 @@ async def stream_debate(session_id: str):
                 budget=session_config.get("budget"),
                 market=session_config.get("market"),
                 timeline_months=session_config.get("timeline_months"),
+                reality_gap=session_config.get("reality_gap"),
             ):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
@@ -403,4 +421,4 @@ async def get_hr_decisions(company_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

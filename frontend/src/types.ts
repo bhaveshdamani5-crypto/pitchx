@@ -37,15 +37,19 @@ export interface HRStartResponse {
 export type DebateEventType =
   | 'memory_loaded'
   | 'research_injected'
+  | 'reality_gap_loaded'
   | 'round_start'
   | 'agent_start'
   | 'token'
   | 'agent_done'
+  | 'claim'
   | 'conflict'
   | 'round_summary'
   | 'synthesis_start'
   | 'business_plan'
+  | 'board_resolution'
   | 'memory_save'
+  | 'memory_rejected'
   | 'done'
   | 'error'
   | 'stream_end';
@@ -53,6 +57,13 @@ export type DebateEventType =
 export interface DebateEvent {
   type: DebateEventType;
   [key: string]: any;
+}
+
+export interface ClaimTag {
+  verified: boolean;
+  source_key?: string;
+  text: string;
+  source_url?: string;
 }
 
 export interface AgentMessage {
@@ -64,6 +75,26 @@ export interface AgentMessage {
   emoji?: string;
   color?: string;
   title?: string;
+  claims?: ClaimTag[];
+}
+
+export interface RealityGap {
+  score: number;
+  severity: string;
+  gaps: Array<{
+    claim: string;
+    reality: string;
+    source: string;
+    severity: string;
+  }>;
+  summary?: string;
+}
+
+export interface BoardResolution {
+  votes: Record<string, 'APPROVE' | 'CONDITIONAL' | 'REJECT'>;
+  conditions: string[];
+  dissent: string;
+  board_verdict: 'GO' | 'CONDITIONAL_GO' | 'NO_GO';
 }
 
 export interface RoundSummary {
@@ -192,6 +223,13 @@ export interface CompanyBrief {
 
 export type AppView = 'home' | 'idea_input' | 'company_input' | 'boardroom' | 'hr_panel';
 
+export interface MemoryEvent {
+  agent: string;
+  key: string;
+  rejected?: boolean;
+  reason?: string;
+}
+
 export interface AppState {
   view: AppView;
   mode: 'new_idea' | 'existing' | 'hr_only';
@@ -204,10 +242,13 @@ export interface AppState {
   roundSummaries: RoundSummary[];
   businessPlan?: BusinessPlan;
   investorScore?: number;
+  killProbability?: number;
+  boardResolution?: BoardResolution;
+  realityGap?: RealityGap;
   researchQueries: ResearchQuery[];
   companyBrief?: CompanyBrief;
   hrResult?: HRResult;
-  memorySaves: Array<{ agent: string; key: string }>;
+  memorySaves: MemoryEvent[];
   memoryCount: number;
   isReturning: boolean;
   error?: string;

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Search } from 'lucide-react';
 import { createCompany, startResearch, startPitch, createSSEStream, streamPostSSE } from '../api';
-import type { CompanyBrief, ResearchQuery } from '../types';
+import type { CompanyBrief, ResearchQuery, RealityGap } from '../types';
 
 interface CompanyInputProps {
   onBack: () => void;
@@ -13,6 +13,7 @@ interface CompanyInputProps {
     isReturning: boolean;
     memoryCount: number;
     companyBrief?: CompanyBrief;
+    realityGap?: RealityGap;
   }) => void;
   onDebateEvent: (event: any) => void;
 }
@@ -72,9 +73,14 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
         company_name: companyName.trim(),
         website_url: website || undefined,
         industry: industry || undefined,
+        stage: stage || undefined,
+        challenge: challenge || undefined,
+        monthly_revenue: monthlyRevenue ? parseFloat(monthlyRevenue) : undefined,
+        team_size: teamSize ? parseInt(teamSize) : undefined,
       });
 
       let companyBrief: CompanyBrief | undefined;
+      let realityGap: RealityGap | undefined;
 
       // Stream research events
       await streamPostSSE(
@@ -95,6 +101,15 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
             );
           } else if (event.type === 'brief_ready') {
             companyBrief = event.brief;
+          } else if (event.type === 'reality_gap') {
+            realityGap = {
+              score: event.score,
+              severity: event.severity,
+              gaps: event.gaps || [],
+              summary: event.summary,
+            };
+          } else if (event.type === 'research_limited') {
+            // Graceful degradation — no error, proceed with limited data
           }
         },
       );
@@ -108,6 +123,7 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
         mode: 'existing',
         idea: companyName.trim(),
         challenge: challenge || undefined,
+        reality_gap: realityGap,
       });
 
       // Navigate to boardroom
@@ -118,6 +134,7 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
         isReturning: companyRes.is_returning,
         memoryCount: companyRes.sessions_count || 0,
         companyBrief,
+        realityGap,
       });
 
       // Start debate SSE stream
@@ -204,7 +221,7 @@ export default function CompanyInput({ onBack, onStartDebate, onDebateEvent }: C
             className="form-input"
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
-            placeholder="e.g., Swiggy, BrowserWire, Authsome..."
+            placeholder="e.g., Swiggy, Razorpay, your startup..."
             required
             disabled={isResearching || isStarting}
           />

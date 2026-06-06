@@ -1,6 +1,9 @@
 import { memo, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import type { AgentMessage } from '../types';
+import { parseContentClaims, stripProvenanceTags, ProvenanceBadges } from '../utils/claimRenderer';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface AgentCardProps {
   message: AgentMessage;
@@ -60,11 +63,16 @@ function AgentCard({ message }: AgentCardProps) {
     );
   }, [message.confidence, message.agent]);
 
-  // Format content with basic markdown-like rendering
-  const formattedContent = useMemo(() => {
-    if (!message.content) return '';
-    return message.content;
-  }, [message.content]);
+  const { displayContent, claims } = useMemo(() => {
+    if (!message.content) return { displayContent: '', claims: [] as ReturnType<typeof parseContentClaims> };
+    const parsed = message.claims?.length
+      ? message.claims
+      : parseContentClaims(message.content);
+    return {
+      displayContent: stripProvenanceTags(message.content),
+      claims: parsed,
+    };
+  }, [message.content, message.claims]);
 
   return (
     <motion.div
@@ -109,19 +117,14 @@ function AgentCard({ message }: AgentCardProps) {
       </div>
 
       <div className="agent-card-body">
-        <pre
-          style={{
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            fontFamily: 'var(--font-sans)',
-            fontSize: '0.88rem',
-            lineHeight: 1.75,
-            margin: 0,
-          }}
-        >
-          {formattedContent}
-          {!message.isComplete && <span className="typing-cursor" />}
-        </pre>
+        {message.isComplete && claims.length > 0 && (
+          <ProvenanceBadges claims={claims} />
+        )}
+        <div className="markdown-content" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {displayContent + (!message.isComplete ? ' ▍' : '')}
+          </ReactMarkdown>
+        </div>
       </div>
     </motion.div>
   );

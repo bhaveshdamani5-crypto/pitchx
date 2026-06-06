@@ -7,6 +7,8 @@ import type {
   AgentMessage,
   RoundSummary,
   CompanyBrief,
+  RealityGap,
+  ClaimTag,
 } from './types';
 
 import ModeSelector from './components/ModeSelector';
@@ -15,6 +17,8 @@ import CompanyInput from './components/CompanyInput';
 import Boardroom from './components/Boardroom';
 import HRPanel from './components/HRPanel';
 import Header from './components/Header';
+import { createCompany, startPitch, createSSEStream } from './api';
+import type { Company } from './types';
 
 const initialState: AppState = {
   view: 'home',
@@ -56,6 +60,7 @@ function App() {
     isReturning: boolean;
     memoryCount: number;
     companyBrief?: CompanyBrief;
+    realityGap?: RealityGap;
   }) => {
     updateState({
       view: 'boardroom',
@@ -65,6 +70,7 @@ function App() {
       isReturning: params.isReturning,
       memoryCount: params.memoryCount,
       companyBrief: params.companyBrief,
+      realityGap: params.realityGap,
       isDebating: true,
       currentRound: 0,
       agentMessages: [],
@@ -72,6 +78,8 @@ function App() {
       memorySaves: [],
       businessPlan: undefined,
       investorScore: undefined,
+      killProbability: undefined,
+      boardResolution: undefined,
       error: undefined,
     });
   }, [updateState]);
@@ -84,6 +92,17 @@ function App() {
           return {
             ...prev,
             memoryCount: event.count || 0,
+          };
+
+        case 'reality_gap_loaded':
+          return {
+            ...prev,
+            realityGap: {
+              score: event.score,
+              severity: event.severity,
+              gaps: event.gaps || [],
+              summary: event.summary,
+            },
           };
 
         case 'round_start':
@@ -120,6 +139,25 @@ function App() {
           return { ...prev, agentMessages: messages };
         }
 
+        case 'claim': {
+          const messages = [...prev.agentMessages];
+          const lastIdx = messages.length - 1;
+          if (lastIdx >= 0 && messages[lastIdx].agent === event.agent) {
+            const existing = messages[lastIdx].claims || [];
+            const newClaim: ClaimTag = {
+              verified: event.verified,
+              source_key: event.source_key,
+              text: event.text,
+              source_url: event.source_url,
+            };
+            messages[lastIdx] = {
+              ...messages[lastIdx],
+              claims: [...existing, newClaim],
+            };
+          }
+          return { ...prev, agentMessages: messages };
+        }
+
         case 'agent_done': {
           const messages = [...prev.agentMessages];
           const lastIdx = messages.length - 1;
@@ -150,6 +188,13 @@ function App() {
             ...prev,
             businessPlan: event.plan,
             investorScore: event.investor_readiness_score,
+            killProbability: event.kill_probability,
+          };
+
+        case 'board_resolution':
+          return {
+            ...prev,
+            boardResolution: event.resolution,
           };
 
         case 'memory_save':
@@ -157,7 +202,21 @@ function App() {
             ...prev,
             memorySaves: [
               ...prev.memorySaves,
-              { agent: event.agent, key: event.key },
+              { agent: event.agent, key: event.key, rejected: false },
+            ],
+          };
+
+        case 'memory_rejected':
+          return {
+            ...prev,
+            memorySaves: [
+              ...prev.memorySaves,
+              {
+                agent: event.agent,
+                key: event.key,
+                rejected: true,
+                reason: event.reason,
+              },
             ],
           };
 
@@ -166,6 +225,7 @@ function App() {
             ...prev,
             isDebating: false,
             investorScore: event.score || prev.investorScore,
+            killProbability: event.kill_probability ?? prev.killProbability,
           };
 
         case 'error':
@@ -181,10 +241,38 @@ function App() {
     });
   }, []);
 
+  const resumeCompany = useCallback(async (company: Company) => {
+    try {
+      const companyRes = await createCompany({
+        name: company.name,
+        website: company.website,
+        mode: company.mode || 'existing',
+      });
+
+      const pitchRes = await startPitch({
+        company_id: companyRes.company_id,
+        mode: company.mode || 'existing',
+        idea: company.name,
+      });
+
+      startBoardroom({
+        companyId: companyRes.company_id,
+        companyName: company.name,
+        sessionId: pitchRes.session_id,
+        isReturning: true,
+        memoryCount: company.memory_count,
+      });
+
+      createSSEStream(pitchRes.stream_url, handleDebateEvent);
+    } catch (err: any) {
+      updateState({ error: err.message || 'Failed to resume session' });
+    }
+  }, [startBoardroom, handleDebateEvent, updateState]);
+
   const renderView = () => {
     switch (state.view) {
       case 'home':
-        return <ModeSelector onSelect={selectMode} />;
+        return <ModeSelector onSelect={selectMode} onResumeCompany={resumeCompany} />;
 
       case 'idea_input':
         return (
@@ -229,7 +317,7 @@ function App() {
         );
 
       default:
-        return <ModeSelector onSelect={selectMode} />;
+        return <ModeSelector onSelect={selectMode} onResumeCompany={resumeCompany} />;
     }
   };
 

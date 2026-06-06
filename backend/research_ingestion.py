@@ -118,9 +118,9 @@ def _load_cached_brief(company_name: str) -> Optional[dict]:
 
 async def ingest_company(
     company_name: str,
-    website_url: str = None,
-    industry: str = None,
-    user_context: dict = None,
+    website_url: Optional[str] = None,
+    industry: Optional[str] = None,
+    user_context: Optional[dict] = None,
     use_cache: bool = True,
 ) -> AsyncGenerator[dict, None]:
     """
@@ -128,7 +128,7 @@ async def ingest_company(
     Final event contains the synthesized CompanyBrief.
     """
     tavily_key = os.getenv("TAVILY_API_KEY")
-    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    nvidia_key = os.getenv("NVIDIA_API_KEY", "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")
 
     industry = industry or "technology"
 
@@ -142,7 +142,7 @@ async def ingest_company(
             yield {"type": "synthesis_start", "cached": True}
             yield {"type": "brief_ready", "brief": cached, "cached": True}
             if user_context:
-                gap = await compute_reality_gap(user_context, cached, openrouter_key)
+                gap = await compute_reality_gap(user_context, cached, nvidia_key)
                 yield {"type": "reality_gap", **gap}
             return
 
@@ -151,7 +151,7 @@ async def ingest_company(
             "type": "research_limited",
             "message": "Live research unavailable — proceeding with provided context only.",
         }
-        brief = _build_fallback_brief(company_name, website_url, {})
+        brief = _build_fallback_brief(company_name, website_url or "", {})
         yield {"type": "brief_ready", "brief": brief, "limited": True}
         return
 
@@ -183,12 +183,12 @@ async def ingest_company(
     # Synthesize into CompanyBrief using Claude
     yield {"type": "synthesis_start"}
 
-    brief = await synthesize_brief(company_name, website_url, raw_data, openrouter_key)
+    brief = await synthesize_brief(company_name, website_url or "", raw_data, nvidia_key or "")
 
     yield {"type": "brief_ready", "brief": brief}
 
     if user_context:
-        gap = await compute_reality_gap(user_context, brief, openrouter_key)
+        gap = await compute_reality_gap(user_context, brief, nvidia_key)
         yield {"type": "reality_gap", **gap}
 
 
@@ -196,18 +196,22 @@ async def synthesize_brief(
     company_name: str,
     website_url: str,
     raw_data: dict,
-    openrouter_key: str,
+    nvidia_key: str,
 ) -> dict:
     """Use Claude to synthesize raw search results into structured CompanyBrief."""
-    if not OPENAI_AVAILABLE or not openrouter_key:
+    if not OPENAI_AVAILABLE or not nvidia_key:
         # Return a minimal brief from raw data
         return _build_fallback_brief(company_name, website_url, raw_data)
 
     try:
-        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=openrouter_key)
+        client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1", 
+            api_key=nvidia_key,
+            max_retries=5
+        )
 
         # Truncate raw data to fit token limits
-        truncated = {}
+        truncated: dict = {}
         for key, val in raw_data.items():
             if isinstance(val, dict):
                 truncated[key] = {
@@ -265,13 +269,14 @@ Return ONLY the JSON. No markdown, no explanation."""
         response = await loop.run_in_executor(
             None,
             lambda: client.chat.completions.create(
-                model="meta-llama/llama-3.3-70b-instruct:free",
+                model="meta/llama-3.3-70b-instruct",
                 max_tokens=2000,
                 messages=[{"role": "user", "content": synthesis_prompt}],
             ),
         )
 
-        text = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        text = content.strip() if content else ""
         # Clean up potential markdown wrapping
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]

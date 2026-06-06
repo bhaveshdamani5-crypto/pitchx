@@ -1,5 +1,6 @@
 """
-PitchX Reality Gap — Compares founder-provided narrative vs live research brief.
+PitchX Reality Gap — Compares founder-provided narrative vs live research
+brief.
 """
 
 import json
@@ -26,7 +27,7 @@ def _severity_label(score: int) -> str:
 async def compute_reality_gap(
     user_context: dict,
     company_brief: dict,
-    openrouter_key: Optional[str] = None,
+    nvidia_key: Optional[str] = None,
 ) -> dict:
     """
     Compare founder narrative against CompanyBrief.
@@ -35,11 +36,15 @@ async def compute_reality_gap(
     if not company_brief:
         return {"score": 0, "severity": "Low", "gaps": [], "summary": "No research data available."}
 
-    if not OPENAI_AVAILABLE or not openrouter_key:
+    if not OPENAI_AVAILABLE or not nvidia_key:
         return _heuristic_gap(user_context, company_brief)
 
     try:
-        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=openrouter_key)
+        client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1", 
+            api_key=nvidia_key,
+            max_retries=5
+        )
         prompt = f"""Compare the founder's self-reported narrative against live public research.
 Identify contradictions, omissions, and overstatements.
 
@@ -71,13 +76,14 @@ Return ONLY JSON."""
         response = await loop.run_in_executor(
             None,
             lambda: client.chat.completions.create(
-                model="meta-llama/llama-3.3-70b-instruct:free",
+                model="meta/llama-3.3-70b-instruct",
                 max_tokens=1200,
                 messages=[{"role": "user", "content": prompt}],
             ),
         )
 
-        text = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        text = content.strip() if content else ""
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
             if text.endswith("```"):

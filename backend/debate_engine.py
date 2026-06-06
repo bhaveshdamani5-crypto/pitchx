@@ -32,12 +32,16 @@ MAX_TOKENS_PER_AGENT = 1200
 class DebateEngine:
     """Runs a multi-round adversarial debate between AI agents."""
 
-    def __init__(self, memory_manager: MemoryManager = None):
+    def __init__(self, memory_manager: Optional[MemoryManager] = None):
         self.memory = memory_manager or MemoryManager()
-        api_key = os.getenv("OPENROUTER_API_KEY")
+        api_key = os.getenv("NVIDIA_API_KEY", "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")
         if not api_key:
-            raise ValueError("OPENROUTER_API_KEY not set")
-        self.client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+            raise ValueError("NVIDIA_API_KEY not set")
+        self.client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1", 
+            api_key=api_key,
+            max_retries=5
+        )
 
     async def run_debate(
         self,
@@ -45,13 +49,13 @@ class DebateEngine:
         company_id: str,
         idea: str,
         mode: str = "new_idea",
-        company_brief: dict = None,
-        challenge: str = None,
-        founder_background: str = None,
-        budget: float = None,
-        market: str = None,
-        timeline_months: int = None,
-        reality_gap: dict = None,
+        company_brief: Optional[dict] = None,
+        challenge: Optional[str] = None,
+        founder_background: Optional[str] = None,
+        budget: Optional[float] = None,
+        market: Optional[str] = None,
+        timeline_months: Optional[int] = None,
+        reality_gap: Optional[dict] = None,
     ) -> AsyncGenerator[dict, None]:
         """
         Run the full debate loop and yield SSE events.
@@ -107,8 +111,8 @@ class DebateEngine:
                 if event.get("type") == "agent_done":
                     all_responses[agent_name] = event.get("full_response", "")
 
-            # Small delay between agents
-            await asyncio.sleep(0.3)
+            # Delay between agents to prevent rate limit
+            await asyncio.sleep(5.0)
 
         # Round 1 summary
         r1_conflicts, r1_agreements = self._detect_conflicts(all_responses)
@@ -139,7 +143,7 @@ class DebateEngine:
                 if event.get("type") == "agent_done":
                     all_responses[f"{agent_name}_r2"] = event.get("full_response", "")
 
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(5.0)
 
         # Round 2 summary
         r2_responses = {
@@ -250,11 +254,11 @@ class DebateEngine:
         company_id: str,
         idea_context: str,
         context: str,
-        company_brief: dict,
+        company_brief: Optional[dict],
         round_num: int,
     ) -> AsyncGenerator[dict, None]:
         """Run a single agent and yield streaming events."""
-        config = AGENT_CONFIG.get(agent_name, AGENT_CONFIG.get("Devil"))
+        config = AGENT_CONFIG.get(agent_name) or AGENT_CONFIG.get("Devil") or {}
         display_name = config.get("name", agent_name)
 
         yield {
@@ -270,7 +274,7 @@ class DebateEngine:
         system_prompt = build_agent_prompt_with_memory(
             agent_name=agent_name,
             company_id=company_id,
-            company_brief=company_brief,
+            company_brief=company_brief or {},
             memory_manager=self.memory,
         )
 
@@ -290,7 +294,7 @@ Provide your analysis now. Be specific, cite data, use numbers where possible.""
             # Stream response
             def create_stream():
                 return self.client.chat.completions.create(
-                    model="meta-llama/llama-3.3-70b-instruct:free",
+                    model="meta/llama-3.3-70b-instruct",
                     max_tokens=MAX_TOKENS_PER_AGENT,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -396,12 +400,13 @@ Return ONLY JSON."""
             response = await loop.run_in_executor(
                 None,
                 lambda: self.client.chat.completions.create(
-                    model="meta-llama/llama-3.3-70b-instruct:free",
+                    model="meta/llama-3.3-70b-instruct",
                     max_tokens=800,
                     messages=[{"role": "user", "content": prompt}],
                 ),
             )
-            text = response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            text = content.strip() if content else ""
             if text.startswith("```"):
                 text = text.split("\n", 1)[1] if "\n" in text else text[3:]
                 if text.endswith("```"):
@@ -506,7 +511,7 @@ Return ONLY JSON."""
 
     def _extract_memory_saves(self, responses: dict) -> dict:
         """Parse SAVE_MEMORY:key=value tags from agent responses."""
-        memory_saves = {}
+        memory_saves: dict[str, dict[str, str]] = {}
         pattern = r"SAVE_MEMORY:(\w+)=(.+?)(?:\n|$)"
 
         for agent, resp in responses.items():
@@ -557,7 +562,7 @@ Return ONLY JSON."""
         responses: dict,
         conflicts: list,
         agreements: list,
-        company_brief: dict,
+        company_brief: Optional[dict],
     ) -> dict:
         """Use Claude to synthesize all agent outputs into a structured business plan."""
         # Truncate responses for context window
@@ -626,13 +631,14 @@ Return ONLY valid JSON. No markdown, no explanation."""
             response = await loop.run_in_executor(
                 None,
                 lambda: self.client.chat.completions.create(
-                    model="meta-llama/llama-3.3-70b-instruct:free",
+                    model="meta/llama-3.3-70b-instruct",
                     max_tokens=2500,
                     messages=[{"role": "user", "content": synthesis_prompt}],
                 ),
             )
 
-            text = response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            text = content.strip() if content else ""
             if text.startswith("```"):
                 text = text.split("\n", 1)[1] if "\n" in text else text[3:]
                 if text.endswith("```"):
@@ -653,12 +659,16 @@ Return ONLY valid JSON. No markdown, no explanation."""
 class HREngine:
     """Runs HR candidate evaluation using the HR agent with business plan context."""
 
-    def __init__(self, memory_manager: MemoryManager = None):
+    def __init__(self, memory_manager: Optional[MemoryManager] = None):
         self.memory = memory_manager or MemoryManager()
-        api_key = os.getenv("OPENROUTER_API_KEY")
+        api_key = os.getenv("NVIDIA_API_KEY", "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")
         if not api_key:
-            raise ValueError("OPENROUTER_API_KEY not set")
-        self.client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+            raise ValueError("NVIDIA_API_KEY not set")
+        self.client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1", 
+            api_key=api_key,
+            max_retries=5
+        )
 
     async def evaluate_candidates(
         self,
@@ -666,7 +676,7 @@ class HREngine:
         session_id: str,
         position: dict,
         candidates: list,
-        business_plan_context: str = None,
+        business_plan_context: Optional[str] = None,
     ) -> AsyncGenerator[dict, None]:
         """Evaluate candidates and yield streaming events."""
         yield {
@@ -756,7 +766,7 @@ class HREngine:
         self,
         position: dict,
         candidate: dict,
-        business_plan_context: str,
+        business_plan_context: Optional[str],
         cto_memory: dict,
         cfo_memory: dict,
         ceo_memory: dict,
@@ -798,16 +808,17 @@ class HREngine:
             response = await loop.run_in_executor(
                 None,
                 lambda: self.client.chat.completions.create(
-                    model="meta-llama/llama-3.3-70b-instruct:free",
+                    model="meta/llama-3.3-70b-instruct",
                     max_tokens=1500,
                     messages=[
-                        {"role": "system", "content": hr_prompt + "\n\nReturn your evaluation as valid JSON only."},
+                        {"role": "system", "content": str(hr_prompt) + "\n\nReturn your evaluation as valid JSON only."},
                         {"role": "user", "content": user_message}
                     ],
                 ),
             )
 
-            text = response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            text = content.strip() if content else ""
             # Try to extract JSON from response
             if "```" in text:
                 json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
@@ -848,7 +859,7 @@ class HREngine:
         self,
         position: dict,
         evaluations: list,
-        business_plan_context: str,
+        business_plan_context: Optional[str],
     ) -> dict:
         """Analyze team gaps based on evaluations and business plan."""
         hired = [

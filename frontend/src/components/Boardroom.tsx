@@ -3,8 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Users, Download, Brain } from 'lucide-react';
 import type { AppState } from '../types';
 import AgentCard from './AgentCard';
-import InvestorScore from './InvestorScore';
+import ScoreGauges from './ScoreGauges';
 import BusinessPlanView from './BusinessPlanView';
+import RealityGapBanner from './RealityGapBanner';
+import BoardResolutionCard from './BoardResolutionCard';
 
 interface BoardroomProps {
   state: AppState;
@@ -81,6 +83,8 @@ export default function Boardroom({ state, onBack, onGoToHR }: BoardroomProps) {
             )}
           </div>
         </div>
+
+        {state.realityGap && <RealityGapBanner gap={state.realityGap} />}
 
         {/* Round headers and agent cards */}
         <AnimatePresence>
@@ -168,10 +172,11 @@ export default function Boardroom({ state, onBack, onGoToHR }: BoardroomProps) {
             {state.memorySaves.map((ms, i) => (
               <span
                 key={i}
-                className="memory-badge"
+                className={`memory-badge ${ms.rejected ? 'memory-rejected' : ''}`}
                 style={{ fontSize: '0.72rem' }}
               >
-                💾 {ms.agent}: {ms.key}
+                {ms.rejected ? '🚫' : '💾'} {ms.agent}: {ms.key}
+                {ms.rejected && ' (scope rejected)'}
               </span>
             ))}
           </motion.div>
@@ -205,10 +210,17 @@ export default function Boardroom({ state, onBack, onGoToHR }: BoardroomProps) {
 
         {activeTab === 'debate' && (
           <div className="glass-card" style={{ padding: 20 }}>
-            <InvestorScore
-              score={state.investorScore}
+            <ScoreGauges
+              investorScore={state.investorScore}
+              killProbability={state.killProbability}
               isDebating={state.isDebating}
             />
+
+            {state.boardResolution && !state.isDebating && (
+              <div style={{ marginTop: 20 }}>
+                <BoardResolutionCard resolution={state.boardResolution} />
+              </div>
+            )}
 
             {/* Company Brief Summary */}
             {state.companyBrief && (
@@ -292,11 +304,18 @@ export default function Boardroom({ state, onBack, onGoToHR }: BoardroomProps) {
             </h4>
             {state.memorySaves.length > 0 ? (
               state.memorySaves.map((ms, i) => (
-                <div key={i} className="memory-item">
+                <div key={i} className={`memory-item ${ms.rejected ? 'memory-item-rejected' : ''}`}>
                   <div className="mem-agent" style={{ color: getAgentColor(ms.agent) }}>
-                    {ms.agent}
+                    {ms.agent} {ms.rejected ? '🚫' : '💾'}
                   </div>
-                  <div className="mem-key">{ms.key}</div>
+                  <div className="mem-key">
+                    {ms.key}
+                    {ms.rejected && (
+                      <span style={{ color: '#f87171', fontSize: '0.75rem' }}>
+                        {' '}— rejected (agent scope)
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))
             ) : (

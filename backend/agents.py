@@ -278,7 +278,16 @@ Red Flags Detected: {company_brief.get('red_flags_detected', [])}
 ===================================================
 """
 
+    provenance_block = """
+=== PROVENANCE RULES (MANDATORY) ===
+Tag every factual claim with exactly one of:
+  [VERIFIED:source_key] claim text — source_key must be one of: company_overview, glassdoor_reviews, customer_reviews, competitors, funding_news, recent_news, market_landscape, founder_background, red_flags
+  [ASSUMPTION] claim text — for inferences without direct research support
+Never cite data not in CompanyBrief without [ASSUMPTION].
+====================================
+"""
+
     return (
         f"{base_prompt}\n\n{memory_block}\n\n{company_block}\n\n"
-        f"COMPANY HISTORY:\n{company_history}"
+        f"COMPANY HISTORY:\n{company_history}\n\n{provenance_block}"
     )
